@@ -1,0 +1,46 @@
+# Investor Intelligence Agent Configuration
+
+app:
+  name: "Investor Intelligence Agent"
+  version: "1.0.0"
+  debug: false
+
+mcp:
+  server:
+    host: "localhost"
+    port: 8000
+    name: "investor-intelligence"
+
+google:
+  apis:
+    sheets:
+      scopes:
+        - "https://www.googleapis.com/auth/spreadsheets"
+    gmail:
+      scopes:
+        - "https://www.googleapis.com/auth/gmail.send"
+        - "https://www.googleapis.com/auth/gmail.readonly"
+
+portfolio:
+  monitoring:
+    interval_minutes: 15
+    price_check_interval_minutes: 5
+  
+  alerts:
+    price_change_threshold: 0.05  # 5%
+    volume_change_threshold: 2.0   # 2x normal volume
+    earnings_days_ahead: 7
+
+email:
+  weekly_summary:
+    day: "monday"
+    time: "09:00"
+  
+  templates:
+    alert_subject: "[Portfolio Alert] {symbol} - {alert_type}"
+    summary_subject: "Weekly Portfolio Summary - {date}"
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/investor_intelligence.log"
