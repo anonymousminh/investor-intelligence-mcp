@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from typing import Any, Sequence
-from mcp import Server, ServerRequestContext
+from .mcp import Server, ServerRequestContext
 from mcp.types import TextContent, Tool, CallToolResult
 from pydantic import BaseModel, Field
 
