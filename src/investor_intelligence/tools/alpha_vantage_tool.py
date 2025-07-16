@@ -37,6 +37,26 @@ def get_historical_data(symbol, interval="1d", outputsize="compact"):
     return data
 
 
+def get_time_series_data(symbol):
+    ts_local = TimeSeries(key=ALPHA_VANTAGE_API_KEY, output_format="json")
+    data, _ = ts_local.get_daily(symbol=symbol, outputsize="compact")
+    return data
+
+
+def get_intraday_data(symbol, interval="5min"):
+    ts_local = TimeSeries(key=ALPHA_VANTAGE_API_KEY, output_format="json")
+    data, _ = ts_local.get_intraday(
+        symbol=symbol, interval=interval, outputsize="compact"
+    )
+    return data
+
+
+def get_quote_endpoint(symbol):
+    ts_local = TimeSeries(key=ALPHA_VANTAGE_API_KEY, output_format="json")
+    data, _ = ts_local.get_quote_endpoint(symbol=symbol)
+    return data
+
+
 if __name__ == "__main__":
     symbol = "MSFT"
     info = get_stock_info(symbol)
