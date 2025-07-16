@@ -10,8 +10,13 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 
 def get_sheets_service():
-    """Shows basic usage of the Sheets API.
-    Prints values from a sample spreadsheet.
+    """
+    Authenticate and return a Google Sheets API service client.
+
+    Handles OAuth2 flow, token storage, and refresh. If no valid token is found, prompts the user to authenticate.
+
+    Returns:
+        googleapiclient.discovery.Resource: Authorized Sheets API service instance.
     """
     creds = None
     # The file token.pickle stores the user's access and refresh tokens, and is
@@ -52,7 +57,16 @@ def get_sheets_service():
 
 
 def read_spreadsheet_data(spreadsheet_id, range_name):
-    """Reads data from a specified Google Sheet range."""
+    """
+    Read data from a specified range in a Google Sheet.
+
+    Args:
+        spreadsheet_id (str): The ID of the Google Spreadsheet.
+        range_name (str): The A1 notation of the range to retrieve (e.g., 'Sheet1!A1:D10').
+
+    Returns:
+        list: List of rows (each row is a list of cell values). Returns an empty list if no data is found.
+    """
     service = get_sheets_service()
     sheet = service.spreadsheets()
     result = (
