@@ -20,3 +20,7 @@ class Server:
 
 class ServerRequestContext:
     pass
+
+
+class MCPServer:
+    pass
