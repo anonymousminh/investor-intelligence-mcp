@@ -1,144 +1,127 @@
-"""Main MCP server for Investor Intelligence Agent."""
+import os
+from .mcp import MCPServer
+from investor_intelligence.tools import tool
 
-import asyncio
-import logging
-from typing import Any, Sequence
-from .mcp import Server, ServerRequestContext
-from mcp.types import TextContent, Tool, CallToolResult
-from pydantic import BaseModel, Field
+# Import the tools and services developed in previous days
+from investor_intelligence.tools.alpha_vantage_tool import (
+    get_current_price,
+    get_historical_data,
+)
+from investor_intelligence.services.portfolio_service import PortfolioService
 
-from .utils.config import config
-from .utils.logging import logger
+# Configuration for PortfolioService (replace with your actual values)
+GOOGLE_SHEET_ID = os.getenv(
+    "GOOGLE_SHEET_ID", "16Bi8WR-mn5ggPZsGmu3Yr3XAg_S7LaZqDhdy2D6x35Q"
+)
+GOOGLE_SHEET_RANGE = os.getenv("GOOGLE_SHEET_RANGE", "Sheet1!A1:D")
+
+# Initialize services
+portfolio_service = PortfolioService(GOOGLE_SHEET_ID, GOOGLE_SHEET_RANGE)
 
 
-class InvestorIntelligenceServer:
-    """Main MCP server class for Investor Intelligence Agent."""
+class InvestorIntelligenceServer(MCPServer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        print("Investor Intelligence MCP Server initialized.")
 
-    def __init__(self):
-        self.server = Server("investor-intelligence")
-        self._setup_tools()
-        self._setup_handlers()
+    @tool("get_stock_price")
+    def get_stock_price(self, ticker: str) -> float:
+        """Retrieves the current stock price for a given ticker symbol.
 
-    def _setup_tools(self):
-        """Register MCP tools."""
+        Args:
+            ticker (str): The stock ticker symbol (e.g., \"AAPL\").
 
-        # Portfolio monitoring tool
-        @self.server.list_tools()
-        async def list_tools() -> list[Tool]:
-            return [
-                Tool(
-                    name="get_portfolio_status",
-                    description="Get current portfolio status and holdings",
-                    inputSchema={"type": "object", "properties": {}, "required": []},
-                ),
-                Tool(
-                    name="check_alerts",
-                    description="Check for new alerts and notifications",
-                    inputSchema={"type": "object", "properties": {}, "required": []},
-                ),
-                Tool(
-                    name="send_summary",
-                    description="Send portfolio summary via email",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "email": {
-                                "type": "string",
-                                "description": "Email address to send summary to",
-                            },
-                            "period": {
-                                "type": "string",
-                                "description": "Time period for summary (daily, weekly, monthly)",
-                                "enum": ["daily", "weekly", "monthly"],
-                            },
-                        },
-                        "required": ["email"],
-                    },
-                ),
-            ]
+        Returns:
+            float: The current stock price.
+        """
+        price = get_current_price(ticker)
+        if price is None:
+            raise ValueError(f"Could not retrieve price for {ticker}")
+        return price
 
-    def _setup_handlers(self):
-        """Set up tool call handlers."""
+    @tool("get_portfolio_holdings")
+    def get_portfolio_holdings(self, user_id: str, portfolio_name: str) -> dict:
+        """Loads and returns the holdings of a specified user portfolio.
 
-        @self.server.call_tool()
-        async def call_tool(
-            name: str, arguments: dict[str, Any], context: ServerRequestContext
-        ) -> CallToolResult:
-            """Handle tool calls."""
+        Args:
+            user_id (str): The ID of the user whose portfolio to load.
+            portfolio_name (str): The name of the portfolio to load.
 
-            logger.info(f"Tool called: {name} with arguments: {arguments}")
-
-            try:
-                if name == "get_portfolio_status":
-                    return await self._get_portfolio_status(arguments)
-                elif name == "check_alerts":
-                    return await self._check_alerts(arguments)
-                elif name == "send_summary":
-                    return await self._send_summary(arguments)
-                else:
-                    raise ValueError(f"Unknown tool: {name}")
-
-            except Exception as e:
-                logger.error(f"Error in tool {name}: {str(e)}")
-                return CallToolResult(
-                    content=[TextContent(type="text", text=f"Error: {str(e)}")],
-                    isError=True,
-                )
-
-    async def _get_portfolio_status(self, arguments: dict) -> CallToolResult:
-        """Get portfolio status (placeholder implementation)."""
-        # TODO: Implement actual portfolio status checking
-        return CallToolResult(
-            content=[
-                TextContent(
-                    type="text",
-                    text="Portfolio status: Server initialized successfully! Integration with Google Sheets, Yahoo Finance, and Gmail will be implemented in the next phases.",
-                )
-            ]
+        Returns:
+            dict: A dictionary representing the portfolio holdings.
+        """
+        portfolio = portfolio_service.load_portfolio_from_sheets(
+            user_id, portfolio_name
         )
+        if portfolio is None:
+            raise ValueError(
+                f"Could not load portfolio {portfolio_name} for user {user_id}"
+            )
 
-    async def _check_alerts(self, arguments: dict) -> CallToolResult:
-        """Check for alerts (placeholder implementation)."""
-        # TODO: Implement actual alert checking
-        return CallToolResult(
-            content=[
-                TextContent(
-                    type="text",
-                    text="No alerts at this time. Alert system will be implemented in Phase 2.",
-                )
-            ]
-        )
+        holdings_list = []
+        for holding in portfolio.holdings:
+            holdings_list.append(
+                {
+                    "symbol": holding.symbol,
+                    "quantity": holding.quantity,
+                    "purchase_price": holding.purchase_price,
+                    "purchase_date": str(
+                        holding.purchase_date
+                    ),  # Convert date to string for serialization
+                }
+            )
+        return {
+            "name": portfolio.name,
+            "user_id": portfolio.user_id,
+            "holdings": holdings_list,
+        }
 
-    async def _send_summary(self, arguments: dict) -> CallToolResult:
-        """Send portfolio summary (placeholder implementation)."""
-        email = arguments.get("email")
-        period = arguments.get("period", "weekly")
+    @tool("get_historical_stock_data")
+    def get_historical_stock_data(self, ticker: str, interval: str = "1d") -> dict:
+        """Retrieves historical stock data for a given ticker symbol.
 
-        # TODO: Implement actual email sending
-        return CallToolResult(
-            content=[
-                TextContent(
-                    type="text",
-                    text=f"Summary for {period} period would be sent to {email}. Email integration will be implemented in Phase 2.",
-                )
-            ]
-        )
+        Args:
+            ticker (str): The stock ticker symbol (e.g., \"AAPL\").
+            interval (str): Data interval (e.g., \"1d\", \"1wk\", \"1mo\").
 
+        Returns:
+            dict: Historical stock data.
+        """
+        data = get_historical_data(ticker, interval=interval)
+        if data is None or data == {}:
+            raise ValueError(f"Could not retrieve historical data for {ticker}")
 
-def main():
-    """Main function to start the MCP server."""
-    logger.info("Starting Investor Intelligence MCP Server...")
-    logger.info(f"Configuration: {config.app.name} v{config.app.version}")
-
-    # Create server instance
-    server_instance = InvestorIntelligenceServer()
-
-    logger.info(f"Server initialized on {config.mcp.host}:{config.mcp.port}")
-    logger.info("Server ready to accept connections")
-
-    # Run the server
-    asyncio.run(server_instance.server.run())
+        # Convert DataFrame to dictionary for JSON serialization
+        return data
 
 
 if __name__ == "__main__":
-    main()
+    # Example of how to run the MCP server
+    # In a real deployment, this would be managed by a larger system
+    server = InvestorIntelligenceServer()
+    # The server would typically be started and managed by the MCP framework
+    # For local testing, you might run it in a way that exposes its tools
+    print(
+        "MCP Server ready. Tools registered: get_stock_price, get_portfolio_holdings, get_historical_stock_data"
+    )
+
+    # Example of directly calling a tool (for testing purposes, not how MCP typically invokes them)
+    try:
+        price = server.get_stock_price("MSFT")
+        print(f"MSFT Price: {price}")
+    except ValueError as e:
+        print(e)
+
+    try:
+        portfolio_data = server.get_portfolio_holdings(
+            "test_user_123", "My Test Portfolio"
+        )
+        print(f"Portfolio Data: {portfolio_data}")
+    except ValueError as e:
+        print(e)
+
+    try:
+        hist_data = server.get_historical_stock_data("AAPL", interval="1d")
+        print(f"AAPL Historical Data: {hist_data}")
+    except ValueError as e:
+        print(e)
