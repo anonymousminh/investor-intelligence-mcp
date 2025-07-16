@@ -25,8 +25,15 @@ def get_sheets_service():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
+            # Find the absolute path to config/credentials.json relative to this file
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            credentials_path = os.path.join(
+                base_dir, "..", "..", "config", "credentials.json"
+            )
+            credentials_path = os.path.abspath(credentials_path)
             flow = InstalledAppFlow.from_client_secrets_file(
-                "config/credentials.json", SCOPES
+                credentials_path,
+                SCOPES,
             )
             creds = flow.run_local_server(port=0)
         # Save the credentials for the next run
