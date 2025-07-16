@@ -17,12 +17,15 @@ def get_sheets_service():
     # The file token.pickle stores the user's access and refresh tokens, and is
     # created automatically when the authorization flow completes for the first
     # time.
+    print("Checking if token.pickle exists in:", os.path.abspath("token.pickle"))
     if os.path.exists("token.pickle"):
+        print("token.pickle exists, attempting to load credentials...")
         with open("token.pickle", "rb") as token:
             creds = pickle.load(token)
     # If there are no (valid) credentials available, let the user log in.
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
+            print("Credentials expired, refreshing...")
             creds.refresh(Request())
         else:
             # Find the absolute path to config/credentials.json relative to this file
@@ -31,6 +34,10 @@ def get_sheets_service():
                 base_dir, "..", "..", "config", "credentials.json"
             )
             credentials_path = os.path.abspath(credentials_path)
+            print(
+                "About to call InstalledAppFlow.from_client_secrets_file with:",
+                credentials_path,
+            )
             flow = InstalledAppFlow.from_client_secrets_file(
                 credentials_path,
                 SCOPES,
