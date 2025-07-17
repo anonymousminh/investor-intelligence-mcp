@@ -53,3 +53,7 @@ typing-inspection==0.4.1
 typing_extensions==4.14.1
 uvicorn==0.35.0
 yfinance==0.2.41
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
