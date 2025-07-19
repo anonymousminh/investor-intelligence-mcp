@@ -108,6 +108,99 @@ class MonitoringService:
 
         return "\n".join(summary_lines)
 
+    def analyze_sentiment(self, text: str) -> str:
+        """Performs basic sentiment analysis on a given text."""
+        text_lower = text.lower()
+        positive_keywords = [
+            "gain",
+            "rise",
+            "growth",
+            "strong",
+            "up",
+            "beat",
+            "exceed",
+            "success",
+            "optimistic",
+            "bullish",
+        ]
+        negative_keywords = [
+            "drop",
+            "fall",
+            "decline",
+            "weak",
+            "down",
+            "miss",
+            "below",
+            "loss",
+            "pessimistic",
+            "bearish",
+        ]
+        positive_score = sum(
+            1 for keyword in positive_keywords if keyword in text_lower
+        )
+        negative_score = sum(
+            1 for keyword in negative_keywords if keyword in text_lower
+        )
+        if positive_score > negative_score:
+            return "positive"
+        elif negative_score > positive_score:
+            return "negative"
+        else:
+            return "neutral"
+
+    def monitor_news_sentiment(self, user_id: str, portfolio: Portfolio):
+        """Monitors news sentiment for stocks in a given portfolio and generates alerts."""
+        print(
+            f"\nMonitoring news sentiment for portfolio {portfolio.name} (User: {user_id})..."
+        )
+        from datetime import timedelta
+        from investor_intelligence.tools.news_tool import get_news_articles
+
+        for holding in portfolio.holdings:
+            print(f"  - Checking news for {holding.symbol}...")
+            # Fetch news for the last 24 hours
+            from_date = (datetime.now() - timedelta(days=1)).isoformat()
+            to_date = datetime.now().isoformat()
+            articles = get_news_articles(
+                holding.symbol, from_date=from_date, to_date=to_date, page_size=5
+            )
+            if not articles:
+                print(f"    No recent news found for {holding.symbol}.")
+                continue
+            for article in articles:
+                title = article.get("title", "")
+                description = article.get("description", "")
+                content = f"{title}. {description}"
+                sentiment = self.analyze_sentiment(content)
+                if sentiment != "neutral":
+                    message = f"NEWS ALERT: {holding.symbol} - {sentiment.upper()} sentiment detected in news: \"{title}\". URL: {article.get('url')}"
+                    # Prevent duplicate alerts for the same article/sentiment
+                    existing_alerts = self.alert_service.get_alerts_for_user(
+                        user_id, active_only=True
+                    )
+                    alert_exists = any(
+                        alert.alert_type == "news_sentiment"
+                        and alert.symbol == holding.symbol
+                        and alert.message == message
+                        for alert in existing_alerts
+                    )
+                    if not alert_exists:
+                        self.alert_service.create_alert(
+                            Alert(
+                                user_id=user_id,
+                                portfolio_id=portfolio.user_id,
+                                alert_type="news_sentiment",
+                                symbol=holding.symbol,
+                                message=message,
+                                triggered_at=datetime.now(),
+                            )
+                        )
+                        print(f"    {message}")
+                    else:
+                        print(
+                            f"    Duplicate news sentiment alert for {holding.symbol} already exists."
+                        )
+
 
 if __name__ == "__main__":
     from investor_intelligence.services.portfolio_service import PortfolioService
@@ -128,26 +221,21 @@ if __name__ == "__main__":
             symbol="MSFT", quantity=5, purchase_price=300.0, purchase_date=date.today()
         ),
         StockHolding(
-            symbol="IBM", quantity=8, purchase_price=140.0, purchase_date=date.today()
+            symbol="GOOG", quantity=8, purchase_price=140.0, purchase_date=date.today()
         ),
     ]
 
     test_portfolio = Portfolio(
-        user_id="test_user", name="Test Portfolio", holdings=test_holdings
+        user_id="test_user", name="Test News Portfolio", holdings=test_holdings
     )
 
-    user_id = "test_user_earnings"
+    user_id = "test_user_news"
 
-    print("Testing earnings monitoring...")
-    monitoring_service.monitor_earnings_reports(user_id, test_portfolio)
+    print("Testing news sentiment monitoring...")
+    monitoring_service.monitor_news_sentiment(user_id, test_portfolio)
 
-    print("\nTesting earnings summary generation...")
-    earnings_summary = monitoring_service.generate_earnings_summary(
-        user_id, test_portfolio
-    )
-    print(earnings_summary)
-
-    print("\nChecking created alerts...")
+    print("\nChecking created news alerts...")
     alerts = alert_service.get_alerts_for_user(user_id, active_only=True)
     for alert in alerts:
-        print(f"  - {alert.alert_type} for {alert.symbol}: {alert.message}")
+        if alert.alert_type == "news_sentiment":
+            print(f"  - {alert.alert_type} for {alert.symbol}: {alert.message}")
