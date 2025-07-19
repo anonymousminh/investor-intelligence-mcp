@@ -39,7 +39,10 @@ def test_get_sheets_service_new_auth(
 
     mock_flow.from_client_secrets_file.assert_called_once_with(
         credentials_path,
-        ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+        [
+            "https://www.googleapis.com/auth/gmail.send",
+            "https://www.googleapis.com/auth/spreadsheets.readonly",
+        ],
     )
     mock_build.assert_called_once_with("sheets", "v4", credentials=mock_creds)
     mock_pickle.dump.assert_called_once_with(mock_creds, mock_file.return_value)
