@@ -1,9 +1,12 @@
 from typing import List
+from datetime import datetime, date
 from investor_intelligence.models.portfolio import Portfolio, StockHolding
-from investor_intelligence.tools.alpha_vantage_tool import get_current_price
+from investor_intelligence.tools.alpha_vantage_tool import (
+    get_current_price,
+    get_earnings_calendar,
+)
 from investor_intelligence.services.alert_service import AlertService
 from investor_intelligence.models.alert import Alert
-from datetime import datetime
 
 
 class MonitoringService:
@@ -12,71 +15,98 @@ class MonitoringService:
     def __init__(self, alert_service: AlertService):
         self.alert_service = alert_service
 
-    def monitor_portfolio_prices(self, user_id: str, portfolio: Portfolio):
-        """Monitors the current prices of stocks in a given portfolio and generates alerts.
-
-        Args:
-            user_id (str): The ID of the user owning the portfolio.
-            portfolio (Portfolio): The portfolio to monitor.
-        """
+    def monitor_earnings_reports(self, user_id: str, portfolio: Portfolio):
+        """Monitors upcoming earnings reports for stocks in a given portfolio and generates alerts."""
         print(
-            f"\nMonitoring prices for portfolio {portfolio.name} (User: {user_id})..."
+            f"\nMonitoring earnings reports for portfolio {portfolio.name} (User: {user_id})..."
         )
+        earnings_calendar = get_earnings_calendar(horizon="3month")
+
+        if not earnings_calendar:
+            print("  Could not retrieve earnings calendar data.")
+            return
+
         for holding in portfolio.holdings:
-            print(f"  - Checking {holding.symbol}...")
-            current_price = get_current_price(holding.symbol)
-            if current_price is None:
-                print(f"    Could not retrieve current price for {holding.symbol}.")
-                continue
+            print(f"  - Checking earnings for {holding.symbol}...")
+            for event in earnings_calendar:
+                if event.get("symbol", "").upper() == holding.symbol.upper():
+                    report_date_str = event.get("reportDate", "")
+                    try:
+                        report_date = datetime.strptime(
+                            report_date_str, "%Y-%m-%d"
+                        ).date()
+                        if (
+                            report_date >= datetime.now().date()
+                        ):  # Only alert for future earnings
+                            days_until = (report_date - datetime.now().date()).days
+                            message = f"ALERT: Earnings report for {holding.symbol} is scheduled for {report_date_str} ({days_until} days from now)."
 
-            current_price_float = float(current_price)
-            purchase_price_float = float(holding.purchase_price)
+                            # Check if we already have an alert for this earnings event
+                            existing_alerts = self.alert_service.get_alerts_for_user(
+                                user_id, active_only=True
+                            )
+                            alert_exists = any(
+                                alert.alert_type == "earnings_report"
+                                and alert.symbol == holding.symbol
+                                and report_date_str in alert.message
+                                for alert in existing_alerts
+                            )
 
-            print(
-                f"    Current Price: ${current_price_float:.2f}, Purchase Price: ${purchase_price_float:.2f}"
+                            if not alert_exists:
+                                self.alert_service.create_alert(
+                                    Alert(
+                                        user_id=user_id,
+                                        portfolio_id=portfolio.user_id,
+                                        alert_type="earnings_report",
+                                        symbol=holding.symbol,
+                                        message=message,
+                                        triggered_at=datetime.now(),
+                                    )
+                                )
+                                print(f"    {message}")
+                            else:
+                                print(
+                                    f"    Alert already exists for {holding.symbol} earnings on {report_date_str}"
+                                )
+                    except ValueError:
+                        print(
+                            f"    Invalid report date format for {holding.symbol}: {report_date_str}"
+                        )
+
+    def generate_earnings_summary(self, user_id: str, portfolio: Portfolio) -> str:
+        """Generates a summary of upcoming earnings reports for the portfolio."""
+        summary_lines = [f"Earnings Summary for {portfolio.name} (User: {user_id}):\n"]
+        earnings_calendar = get_earnings_calendar(horizon="3month")
+
+        if not earnings_calendar:
+            summary_lines.append("  Could not retrieve earnings calendar data.\n")
+            return "\n".join(summary_lines)
+
+        found_earnings = False
+        for holding in portfolio.holdings:
+            for event in earnings_calendar:
+                if event.get("symbol", "").upper() == holding.symbol.upper():
+                    report_date_str = event.get("reportDate", "")
+                    try:
+                        report_date = datetime.strptime(
+                            report_date_str, "%Y-%m-%d"
+                        ).date()
+                        if report_date >= datetime.now().date():
+                            days_until = (report_date - datetime.now().date()).days
+                            fiscal_date = event.get("fiscalDateEnding", "N/A")
+                            summary_lines.append(
+                                f"  - {holding.symbol}: Report due on {report_date_str} ({days_until} days) - Fiscal Date Ending: {fiscal_date}\n"
+                            )
+                            found_earnings = True
+                    except ValueError:
+                        pass  # Skip invalid dates
+
+        if not found_earnings:
+            summary_lines.append(
+                "  No upcoming earnings reports found for your portfolio holdings.\n"
             )
 
-            # Example: Check for significant price drops or gains relative to purchase price
-            price_change_percent = (
-                (current_price_float - purchase_price_float) / purchase_price_float
-            ) * 100
-
-            # Define alert thresholds (these could be configurable)
-            DROP_THRESHOLD = -5.0  # 5% drop
-            GAIN_THRESHOLD = 10.0  # 10% gain
-
-            if price_change_percent <= DROP_THRESHOLD:
-                message = f"ALERT: {holding.symbol} has dropped by {abs(price_change_percent):.2f}% to ${current_price_float:.2f} (from ${purchase_price_float:.2f})."
-                self.alert_service.create_alert(
-                    Alert(
-                        user_id=user_id,
-                        portfolio_id=portfolio.user_id,  # Using user_id as portfolio_id for simplicity here
-                        alert_type="price_drop",
-                        symbol=holding.symbol,
-                        threshold=DROP_THRESHOLD,
-                        message=message,
-                        triggered_at=datetime.now(),
-                    )
-                )
-                print(f"    {message}")
-            elif price_change_percent >= GAIN_THRESHOLD:
-                message = f"ALERT: {holding.symbol} has gained by {price_change_percent:.2f}% to ${current_price_float:.2f} (from ${purchase_price_float:.2f})."
-                self.alert_service.create_alert(
-                    Alert(
-                        user_id=user_id,
-                        portfolio_id=portfolio.user_id,  # Using user_id as portfolio_id for simplicity here
-                        alert_type="price_gain",
-                        symbol=holding.symbol,
-                        threshold=GAIN_THRESHOLD,
-                        message=message,
-                        triggered_at=datetime.now(),
-                    )
-                )
-                print(f"    {message}")
-            else:
-                print(
-                    f"    {holding.symbol} price change within thresholds ({price_change_percent:.2f}%)."
-                )
+        return "\n".join(summary_lines)
 
 
 if __name__ == "__main__":
@@ -89,36 +119,35 @@ if __name__ == "__main__":
     alert_service = AlertService()
     monitoring_service = MonitoringService(alert_service)
 
-    # IMPORTANT: Replace with your actual Google Sheet ID and range
-    SAMPLE_SPREADSHEET_ID = "16Bi8WR-mn5ggPZsGmu3Yr3XAg_S7LaZqDhdy2D6x35Q"
-    SAMPLE_RANGE_NAME = "Sheet1!A1:D"
+    # Create a test portfolio
+    test_holdings = [
+        StockHolding(
+            symbol="AAPL", quantity=10, purchase_price=150.0, purchase_date=date.today()
+        ),
+        StockHolding(
+            symbol="MSFT", quantity=5, purchase_price=300.0, purchase_date=date.today()
+        ),
+        StockHolding(
+            symbol="IBM", quantity=8, purchase_price=140.0, purchase_date=date.today()
+        ),
+    ]
 
-    portfolio_service = PortfolioService(SAMPLE_SPREADSHEET_ID, SAMPLE_RANGE_NAME)
-
-    user_id = "test_user_monitor"
-    portfolio_name = "Monitoring Portfolio"
-
-    # Load portfolio from sheets (or create a dummy one for testing if sheet access is an issue)
-    loaded_portfolio = portfolio_service.load_portfolio_from_sheets(
-        user_id, portfolio_name
+    test_portfolio = Portfolio(
+        user_id="test_user", name="Test Portfolio", holdings=test_holdings
     )
 
-    if loaded_portfolio:
-        print(
-            f"\nSuccessfully loaded portfolio for monitoring: {loaded_portfolio.name}"
-        )
-        monitoring_service.monitor_portfolio_prices(user_id, loaded_portfolio)
+    user_id = "test_user_earnings"
 
-        # Verify alerts were created
-        print("\nChecking for created alerts...")
-        alerts = alert_service.get_alerts_for_user(user_id, active_only=False)
-        if alerts:
-            for alert in alerts:
-                print(f"  - {alert.alert_type} for {alert.symbol}: {alert.message}")
-        else:
-            print("  No alerts created (prices within thresholds or API issues).")
+    print("Testing earnings monitoring...")
+    monitoring_service.monitor_earnings_reports(user_id, test_portfolio)
 
-    else:
-        print(
-            "Failed to load portfolio for monitoring. Please check Google Sheet ID and range."
-        )
+    print("\nTesting earnings summary generation...")
+    earnings_summary = monitoring_service.generate_earnings_summary(
+        user_id, test_portfolio
+    )
+    print(earnings_summary)
+
+    print("\nChecking created alerts...")
+    alerts = alert_service.get_alerts_for_user(user_id, active_only=True)
+    for alert in alerts:
+        print(f"  - {alert.alert_type} for {alert.symbol}: {alert.message}")
