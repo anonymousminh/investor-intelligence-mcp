@@ -9,7 +9,10 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 # If modifying these scopes, delete the file token.pickle.
-SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/spreadsheets.readonly",
+]
 
 
 def get_gmail_service():
@@ -98,9 +101,7 @@ if __name__ == "__main__":
     # Example usage:
     service = get_gmail_service()
     sender_email = "me"  # "me" refers to the authenticated user
-    recipient_email = (
-        "your_recipient_email@example.com"  # Replace with a test recipient email
-    )
+    recipient_email = "cookieoil7999@gmail.com"  # Replace with a test recipient email
     email_subject = "Test Email from Investor Intelligence Agent"
     email_body = "This is a test email sent from the Investor Intelligence Agent MCP Server. If you received this, the Gmail integration is working!"
 
