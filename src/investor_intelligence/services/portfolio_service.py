@@ -2,7 +2,10 @@ from typing import List, Optional
 from datetime import date, datetime
 
 from investor_intelligence.models.portfolio import Portfolio, StockHolding
-from investor_intelligence.tools.sheets_tool import read_spreadsheet_data
+from investor_intelligence.tools.sheets_tool import (
+    read_spreadsheet_data,
+    get_sheets_service,
+)
 
 
 class PortfolioService:
@@ -97,6 +100,45 @@ class PortfolioService:
         else:
             print("No portfolio loaded. Cannot remove holding.")
             return False
+
+    def save_portfolio_to_sheets(self):
+        """
+        Saves the current portfolio holdings back to the Google Sheet.
+        """
+        if not self._portfolio:
+            print("No portfolio loaded. Cannot save.")
+            return False
+
+        service = get_sheets_service()
+        sheet = service.spreadsheets()
+
+        # Prepare data: header + holdings
+        data = [["Stock Symbol", "Quantity", "Purchase Price", "Purchase Date"]]
+        for holding in self._portfolio.holdings:
+            data.append(
+                [
+                    holding.symbol,
+                    holding.quantity,
+                    holding.purchase_price,
+                    holding.purchase_date.strftime("%Y-%m-%d"),
+                ]
+            )
+
+        body = {"values": data}
+
+        result = (
+            sheet.values()
+            .update(
+                spreadsheetId=self.spreadsheet_id,
+                range=self.range_name,
+                valueInputOption="RAW",
+                body=body,
+            )
+            .execute()
+        )
+
+        print(f"{result.get('updatedCells')} cells updated in Google Sheet.")
+        return True
 
 
 if __name__ == "__main__":
