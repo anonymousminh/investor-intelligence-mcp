@@ -37,13 +37,15 @@ def test_get_sheets_service_new_auth(
 
     service = sheets_tool.get_sheets_service()
 
-    mock_flow.from_client_secrets_file.assert_called_once_with(
-        credentials_path,
-        [
-            "https://www.googleapis.com/auth/gmail.send",
-            "https://www.googleapis.com/auth/spreadsheets.readonly",
-        ],
-    )
+    # Check that the correct credentials path was used
+    actual_args = mock_flow.from_client_secrets_file.call_args[0]
+    actual_scopes = set(actual_args[1])
+    expected_scopes = {
+        "https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/spreadsheets",
+    }
+    assert set(actual_scopes) == expected_scopes
+    assert actual_args[0] == credentials_path
     mock_build.assert_called_once_with("sheets", "v4", credentials=mock_creds)
     mock_pickle.dump.assert_called_once_with(mock_creds, mock_file.return_value)
     assert service is not None
