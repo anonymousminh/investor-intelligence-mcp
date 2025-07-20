@@ -11,6 +11,8 @@ from googleapiclient.errors import HttpError
 # If modifying these scopes, delete the file token.pickle.
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/spreadsheets.readonly",
 ]
 
@@ -96,6 +98,90 @@ def send_message(service, user_id, message):
         print(f"An error occurred: {error}")
         return None
 
+    service = get_gmail_service()
+    message = MIMEText(message_body)
+    message["to"] = to_email
+    message["subject"] = subject
+    raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+    body = {"raw": raw_message}
+    try:
+        message = service.users().messages().send(userId="me", body=body).execute()
+        print(f"Email sent to {to_email}. Message Id: {message[id]}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+
+def get_unread_emails(query: str = "is:unread") -> list:
+    """Fetches unread emails from the user's inbox based on a query.
+
+    Args:
+        query (str): Gmail API query string (e.g., "is:unread subject:stock").
+
+    Returns:
+        list: A list of dictionaries, where each dictionary represents an email message.
+              Each dictionary contains 'id', 'snippet', and 'payload' (for full content).
+    """
+    service = get_gmail_service()
+    try:
+        response = service.users().messages().list(userId="me", q=query).execute()
+        messages = response.get("messages", [])
+
+        email_list = []
+        for msg in messages:
+            msg_id = msg["id"]
+            full_message = (
+                service.users()
+                .messages()
+                .get(userId="me", id=msg_id, format="full")
+                .execute()
+            )
+
+            # Extract relevant parts of the email
+            headers = full_message["payload"]["headers"]
+            subject = next(
+                (header["value"] for header in headers if header["name"] == "Subject"),
+                "No Subject",
+            )
+            sender = next(
+                (header["value"] for header in headers if header["name"] == "From"),
+                "Unknown Sender",
+            )
+
+            # Get email body (handling different MIME types)
+            msg_body = ""
+            if "parts" in full_message["payload"]:
+                for part in full_message["payload"]["parts"]:
+                    if part["mimeType"] == "text/plain":
+                        data = part["body"].get("data")
+                        if data:
+                            msg_body = base64.urlsafe_b64decode(data).decode("utf-8")
+                            break
+            else:
+                data = full_message["payload"]["body"].get("data")
+                if data:
+                    msg_body = base64.urlsafe_b64decode(data).decode("utf-8")
+
+            email_list.append(
+                {
+                    "id": msg_id,
+                    "subject": subject,
+                    "sender": sender,
+                    "body": msg_body,
+                    "snippet": full_message["snippet"],
+                }
+            )
+
+            # Mark as read after processing (optional, but good practice)
+            service.users().messages().modify(
+                userId="me", id=msg_id, body={"removeLabelIds": ["UNREAD"]}
+            ).execute()
+
+        return email_list
+
+    except Exception as e:
+        print(f"An error occurred while fetching emails: {e}")
+        return []
+
 
 if __name__ == "__main__":
     # Example usage:
@@ -107,3 +193,14 @@ if __name__ == "__main__":
 
     message = create_message(sender_email, recipient_email, email_subject, email_body)
     send_message(service, sender_email, message)
+
+    print("\n--- Fetching unread emails ---")
+    # Example: Fetch unread emails with 'stock' or 'query' in subject
+    unread_queries = get_unread_emails(query="is:unread subject:(stock OR query)")
+    if unread_queries:
+        for email in unread_queries:
+            print(f"  From: {email['sender']}")
+            print(f"  Subject: {email['subject']}")
+            print(f"  Body Snippet: {email['snippet']}\n")
+    else:
+        print("No unread queries found.")
