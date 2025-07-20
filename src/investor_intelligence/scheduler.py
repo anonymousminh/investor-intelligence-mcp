@@ -77,21 +77,47 @@ def send_daily_intelligence_summary():
             )
 
 
-if __name__ == "__main__":
-    scheduler = BackgroundScheduler()
+# Schedule the job to run every Monday at 9:00 AM
+scheduler.add_job(send_weekly_intelligence_summary, CronTrigger(day_of_week=\'mon\', hour=9, minute=0))
 
-    # Schedule the job to run every day at a specific time (e.g., 8:00 AM)
-    # Adjust the cron expression as needed (e.g., for weekly summaries)
-    scheduler.add_job(
-        send_daily_intelligence_summary, CronTrigger(hour=8, minute=0, day_of_week="*")
-    )
+def send_weekly_intelligence_summary():
+    print(f"\n--- Running weekly intelligence summary job at {datetime.now()} ---")
+    for user_data in USERS_TO_MONITOR:
+        user_id = user_data["user_id"]
+        user_email = user_data["email"]
+        portfolio_name = user_data["portfolio_name"]
 
-    # Start the scheduler
-    scheduler.start()
-    print("Scheduler started. Press Ctrl+C to exit.")
+        portfolio_config = PORTFOLIO_MAPPING.get(user_id)
+        if not portfolio_config:
+            print(f"No portfolio configuration found for user {user_id}. Skipping weekly summary.")
+            continue
 
-    # Shut down the scheduler when the app exits
-    atexit.register(lambda: scheduler.shutdown())
+        portfolio_service = PortfolioService(portfolio_config["spreadsheet_id"], portfolio_config["range_name"])
+        portfolio = portfolio_service.load_portfolio_from_sheets(user_id, portfolio_name)
 
-    while True:
-        time.sleep(1)  # Keep the main thread alive
+        if portfolio:
+            print(f"Generating weekly summary for {user_id} - {portfolio.name}...")
+            weekly_summary = summary_service.generate_weekly_summary(user_id, portfolio)
+            send_email(user_email, f"Weekly Investor Intelligence Summary - {datetime.now().strftime("%Y-%m-%d")}", weekly_summary)
+        else:
+            print(f"Could not load portfolio for user {user_id}. Skipping weekly summary generation.")
+
+
+# if __name__ == "__main__":
+#     scheduler = BackgroundScheduler()
+
+#     # Schedule the job to run every day at a specific time (e.g., 8:00 AM)
+#     # Adjust the cron expression as needed (e.g., for weekly summaries)
+#     scheduler.add_job(
+#         send_daily_intelligence_summary, CronTrigger(hour=8, minute=0, day_of_week="*")
+#     )
+
+#     # Start the scheduler
+#     scheduler.start()
+#     print("Scheduler started. Press Ctrl+C to exit.")
+
+#     # Shut down the scheduler when the app exits
+#     atexit.register(lambda: scheduler.shutdown())
+
+#     while True:
+#         time.sleep(1)  # Keep the main thread alive
