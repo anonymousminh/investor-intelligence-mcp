@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Investor Intelligence Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Investor Intelligence Dashboard</h1>
+
+        <section class="portfolio-overview">
+            <h2>Portfolio Overview</h2>
+            {% if portfolio %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Quantity</th>
+                            <th>Purchase Price</th>
+                            <th>Purchase Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for holding in portfolio.holdings %}
+                            <tr>
+                                <td>{{ holding.symbol }}</td>
+                                <td>{{ holding.quantity }}</td>
+                                <td>{{ "%.2f" | format(holding.purchase_price) }}</td>
+                                <td>{{ holding.purchase_date }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p>No portfolio data available. Please check your Google Sheet ID and range.</p>
+            {% endif %}
+        </section>
+
+        <section class="add-holding">
+            <h2>Add New Holding</h2>
+            <form action="/add_holding" method="post">
+                <label for="symbol">Symbol:</label>
+                <input type="text" id="symbol" name="symbol" required>
+                <label for="quantity">Quantity:</label>
+                <input type="number" id="quantity" name="quantity" required>
+                <label for="purchase_price">Purchase Price:</label>
+                <input type="number" id="purchase_price" name="purchase_price" step="0.01" required>
+                <label for="purchase_date">Purchase Date:</label>
+                <input type="date" id="purchase_date" name="purchase_date" required>
+                <button type="submit">Add Holding</button>
+            </form>
+        </section>
+
+        <section class="active-alerts">
+            <h2>Active Alerts</h2>
+            {% if alerts %}
+                <ul>
+                    {% for alert in alerts %}
+                        <li>
+                            <strong>{{ alert.alert_type | upper }}</strong> for {{ alert.symbol }}: {{ alert.message }}
+                            <a href="/deactivate_alert/{{ alert.id }}" class="deactivate-btn">Deactivate</a>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>No active alerts.</p>
+            {% endif %}
+        </section>
+    </div>
+</body>
+</html>
