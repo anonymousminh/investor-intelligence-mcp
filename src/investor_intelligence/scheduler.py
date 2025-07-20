@@ -7,6 +7,8 @@ from investor_intelligence.services.summary_service import SummaryService
 from investor_intelligence.services.alert_service import AlertService
 from investor_intelligence.services.monitoring_service import MonitoringService
 from investor_intelligence.services.portfolio_service import PortfolioService
+from investor_intelligence.services.nlp_service import NLPService
+from investor_intelligence.services.query_processor_service import QueryProcessorService
 from investor_intelligence.tools.gmail_tool import (
     send_message,
     get_gmail_service,
@@ -19,6 +21,7 @@ from datetime import date, datetime
 alert_service = AlertService()
 monitoring_service = MonitoringService(alert_service)
 summary_service = SummaryService(alert_service, monitoring_service)
+nlp_service = NLPService()
 
 # Placeholder for user data (in a real app, this would come from a user management system)
 USERS_TO_MONITOR = [
@@ -38,6 +41,20 @@ PORTFOLIO_MAPPING = {
         "range_name": "Sheet1!A1:D",
     },
 }
+
+
+def get_user_email_by_id(user_id: str) -> str:
+    for user_data in USERS_TO_MONITOR:
+        if user_data["user_id"] == user_id:
+            return user_data["email"]
+    return None
+
+
+def get_user_id_by_email(email: str) -> str:
+    for user_data in USERS_TO_MONITOR:
+        if user_data["email"] == email:
+            return user_data["user_id"]
+    return None
 
 
 def send_daily_intelligence_summary():
@@ -77,9 +94,6 @@ def send_daily_intelligence_summary():
             )
 
 
-# Schedule the job to run every Monday at 9:00 AM
-scheduler.add_job(send_weekly_intelligence_summary, CronTrigger(day_of_week=\'mon\', hour=9, minute=0))
-
 def send_weekly_intelligence_summary():
     print(f"\n--- Running weekly intelligence summary job at {datetime.now()} ---")
     for user_data in USERS_TO_MONITOR:
@@ -89,35 +103,83 @@ def send_weekly_intelligence_summary():
 
         portfolio_config = PORTFOLIO_MAPPING.get(user_id)
         if not portfolio_config:
-            print(f"No portfolio configuration found for user {user_id}. Skipping weekly summary.")
+            print(
+                f"No portfolio configuration found for user {user_id}. Skipping weekly summary."
+            )
             continue
 
-        portfolio_service = PortfolioService(portfolio_config["spreadsheet_id"], portfolio_config["range_name"])
-        portfolio = portfolio_service.load_portfolio_from_sheets(user_id, portfolio_name)
+        portfolio_service = PortfolioService(
+            portfolio_config["spreadsheet_id"], portfolio_config["range_name"]
+        )
+        portfolio = portfolio_service.load_portfolio_from_sheets(
+            user_id, portfolio_name
+        )
 
         if portfolio:
             print(f"Generating weekly summary for {user_id} - {portfolio.name}...")
             weekly_summary = summary_service.generate_weekly_summary(user_id, portfolio)
-            send_email(user_email, f"Weekly Investor Intelligence Summary - {datetime.now().strftime("%Y-%m-%d")}", weekly_summary)
+            send_email(
+                user_email,
+                f"Weekly Investor Intelligence Summary - {datetime.now().strftime('%Y-%m-%d')}",
+                weekly_summary,
+            )
         else:
-            print(f"Could not load portfolio for user {user_id}. Skipping weekly summary generation.")
+            print(
+                f"Could not load portfolio for user {user_id}. Skipping weekly summary generation."
+            )
 
 
-# if __name__ == "__main__":
-#     scheduler = BackgroundScheduler()
+def process_incoming_email_queries():
+    print(f"\n--- Processing incoming email queries at {datetime.now()} ---")
+    # Fetch unread emails that might be queries
+    # You might want to filter by sender or subject more strictly in a real app
+    unread_emails = get_unread_emails(
+        query="is:unread subject:(stock OR query OR portfolio OR price OR earnings OR news)"
+    )
 
-#     # Schedule the job to run every day at a specific time (e.g., 8:00 AM)
-#     # Adjust the cron expression as needed (e.g., for weekly summaries)
-#     scheduler.add_job(
-#         send_daily_intelligence_summary, CronTrigger(hour=8, minute=0, day_of_week="*")
-#     )
+    if unread_emails:
+        query_processor = QueryProcessorService(
+            nlp_service, PortfolioService("", ""), monitoring_service
+        )  # Initialize with dummy portfolio service for now
+        for email in unread_emails:
+            sender_email = email["sender"]
+            # Attempt to map sender email to a user_id
+            user_id = get_user_id_by_email(sender_email)
+            if user_id:
+                print(f"Processing query from {sender_email} (User ID: {user_id})...")
+                response_body = query_processor.process_email_query(
+                    user_id, sender_email, email["body"]
+                )
+                send_email(sender_email, f"Re: {email['subject']}", response_body)
+            else:
+                print(f"Unknown sender: {sender_email}. Skipping query.")
+    else:
+        print("No new email queries to process.")
 
-#     # Start the scheduler
-#     scheduler.start()
-#     print("Scheduler started. Press Ctrl+C to exit.")
 
-#     # Shut down the scheduler when the app exits
-#     atexit.register(lambda: scheduler.shutdown())
+if __name__ == "__main__":
+    scheduler = BackgroundScheduler()
 
-#     while True:
-#         time.sleep(1)  # Keep the main thread alive
+    # Schedule daily summary (e.g., every day at 8:00 AM)
+    scheduler.add_job(
+        send_daily_intelligence_summary, CronTrigger(hour=8, minute=0, day_of_week="*")
+    )
+
+    # Schedule weekly summary (e.g., every Monday at 9:00 AM)
+    scheduler.add_job(
+        send_weekly_intelligence_summary,
+        CronTrigger(day_of_week="mon", hour=9, minute=0),
+    )
+
+    # Schedule email query processing (e.g., every 5 minutes)
+    scheduler.add_job(process_incoming_email_queries, CronTrigger(minute="*/5"))
+
+    # Start the scheduler
+    scheduler.start()
+    print("Scheduler started. Press Ctrl+C to exit.")
+
+    # Shut down the scheduler when the app exits
+    atexit.register(lambda: scheduler.shutdown())
+
+    while True:
+        time.sleep(1)  # Keep the main thread alive
