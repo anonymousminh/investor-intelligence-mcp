@@ -36,13 +36,14 @@ class SummaryService:
 
         # 1. Price Change Alerts
         summary_lines.append("## Price Change Alerts\n")
-        price_alerts = [
+        all_price_alerts = [
             alert
             for alert in self.alert_service.get_alerts_for_user(
                 user_id, active_only=True
             )
             if alert.alert_type in ["price_drop", "price_gain"]
         ]
+        price_alerts = self.alert_service.filter_alerts(all_price_alerts, user_id)
         if price_alerts:
             for alert in price_alerts:
                 summary_lines.append(f"- {alert.message}\n")
@@ -62,13 +63,14 @@ class SummaryService:
 
         # 3. News Sentiment Alerts
         summary_lines.append("## News Sentiment Alerts\n")
-        news_alerts = [
+        all_news_alerts = [
             alert
             for alert in self.alert_service.get_alerts_for_user(
                 user_id, active_only=True
             )
             if alert.alert_type == "news_sentiment"
         ]
+        news_alerts = self.alert_service.filter_alerts(all_news_alerts, user_id)
         if news_alerts:
             for alert in news_alerts:
                 summary_lines.append(f"- {alert.message}\n")
@@ -151,13 +153,14 @@ class SummaryService:
         # 2. Consolidated Alerts from the Week
         summary_lines.append("## Alerts from the Past Week\n")
         one_week_ago = datetime.now() - timedelta(days=7)
-        weekly_alerts = [
+        all_weekly_alerts = [
             alert
             for alert in self.alert_service.get_alerts_for_user(
                 user_id, active_only=False
             )
             if alert.created_at >= one_week_ago
         ]
+        weekly_alerts = self.alert_service.filter_alerts(all_weekly_alerts, user_id)
 
         if weekly_alerts:
             for alert in weekly_alerts:

@@ -7,13 +7,15 @@ from investor_intelligence.tools.alpha_vantage_tool import (
 )
 from investor_intelligence.services.alert_service import AlertService
 from investor_intelligence.models.alert import Alert
+from investor_intelligence.ml.relevance_model import RelevanceModel
 
 
 class MonitoringService:
     """Service for monitoring stock prices and generating alerts."""
 
-    def __init__(self, alert_service: AlertService):
+    def __init__(self, alert_service: AlertService, relevance_model: RelevanceModel):
         self.alert_service = alert_service
+        self.relevance_model = RelevanceModel()
 
     def monitor_earnings_reports(self, user_id: str, portfolio: Portfolio):
         """Monitors upcoming earnings reports for stocks in a given portfolio and generates alerts."""
@@ -53,17 +55,42 @@ class MonitoringService:
                             )
 
                             if not alert_exists:
-                                self.alert_service.create_alert(
-                                    Alert(
-                                        user_id=user_id,
-                                        portfolio_id=portfolio.user_id,
-                                        alert_type="earnings_report",
-                                        symbol=holding.symbol,
-                                        message=message,
-                                        triggered_at=datetime.now(),
+                                # Calculate relevance score
+                                user_preferences = (
+                                    self.alert_service.get_user_alert_preferences(
+                                        user_id
                                     )
                                 )
-                                print(f"    {message}")
+                                alert_dict = {
+                                    "type": "earnings_report",
+                                    "symbol": holding.symbol,
+                                    "report_date": report_date_str,
+                                }
+                                relevance_score = (
+                                    self.relevance_model.predict_relevance(
+                                        alert_dict, user_preferences
+                                    )
+                                )
+                                new_alert = Alert(
+                                    user_id=user_id,
+                                    portfolio_id=portfolio.user_id,
+                                    alert_type="earnings_report",
+                                    symbol=holding.symbol,
+                                    message=message,
+                                    triggered_at=datetime.now(),
+                                    relevance_score=relevance_score,
+                                )
+                                # Filter the alert before creating
+                                filtered = self.alert_service.filter_alerts(
+                                    [new_alert], user_id
+                                )
+                                if filtered:
+                                    self.alert_service.create_alert(filtered[0])
+                                    print(f"    {message}")
+                                else:
+                                    print(
+                                        f"    Alert for {holding.symbol} filtered out by user preferences."
+                                    )
                             else:
                                 print(
                                     f"    Alert already exists for {holding.symbol} earnings on {report_date_str}"
@@ -185,21 +212,132 @@ class MonitoringService:
                         for alert in existing_alerts
                     )
                     if not alert_exists:
+                        # Calculate relevance score
+                        user_preferences = (
+                            self.alert_service.get_user_alert_preferences(user_id)
+                        )
+                        alert_dict = {
+                            "type": "news_sentiment",
+                            "symbol": holding.symbol,
+                            "sentiment": sentiment,
+                            "title": title,
+                        }
+                        relevance_score = self.relevance_model.predict_relevance(
+                            alert_dict, user_preferences
+                        )
+                        new_alert = Alert(
+                            user_id=user_id,
+                            portfolio_id=portfolio.user_id,
+                            alert_type="news_sentiment",
+                            symbol=holding.symbol,
+                            message=message,
+                            triggered_at=datetime.now(),
+                            relevance_score=relevance_score,
+                        )
+                        # Filter the alert before creating
+                        filtered = self.alert_service.filter_alerts(
+                            [new_alert], user_id
+                        )
+                        if filtered:
+                            self.alert_service.create_alert(filtered[0])
+                            print(f"    {message}")
+                        else:
+                            print(
+                                f"    News sentiment alert for {holding.symbol} filtered out by user preferences."
+                            )
+                    else:
+                        print(
+                            f"    Duplicate news sentiment alert for {holding.symbol} already exists."
+                        )
+
+    def monitor_price_changes(
+        self, user_id: str, portfolio: Portfolio, threshold: float = 1.0
+    ):
+        """Monitors price changes for stocks in a given portfolio and generates alerts.
+
+        Args:
+            user_id (str): The ID of the user.
+            portfolio (Portfolio): The portfolio to monitor.
+            threshold (float): The percentage change threshold to trigger an alert (e.g., 1.0 for 1%).
+        """
+        print(
+            f"\nMonitoring price changes for portfolio {portfolio.name} (User: {user_id})..."
+        )
+        for holding in portfolio.holdings:
+            print(f"  - Checking price for {holding.symbol}...")
+            current_price = get_current_price(holding.symbol)
+            if current_price is None:
+                print(f"    Could not retrieve current price for {holding.symbol}.")
+                continue
+
+            # For simplicity, let's assume we have a way to get the previous price.
+            # In a real system, you would store historical prices in a database.
+            # For now, let's simulate a previous price or fetch a historical one.
+            # This part needs to be more robust for production.
+            previous_price = (
+                holding.purchase_price
+            )  # Using purchase price as a baseline for now
+
+            if previous_price and previous_price > 0:
+                percentage_change = (
+                    (current_price - previous_price) / previous_price
+                ) * 100
+
+                alert_type = None
+                if percentage_change >= threshold:
+                    alert_type = "price_gain"
+                elif percentage_change <= -threshold:
+                    alert_type = "price_drop"
+
+                if alert_type:
+                    message = f"ALERT: {holding.symbol} price changed by {percentage_change:.2f}% to ${current_price:.2f}."
+
+                    # Calculate relevance score
+                    user_preferences = self.alert_service.get_user_alert_preferences(
+                        user_id
+                    )
+                    alert_dict = {
+                        "type": alert_type,
+                        "symbol": holding.symbol,
+                        "change": percentage_change,
+                    }
+                    relevance_score = self.relevance_model.predict_relevance(
+                        alert_dict, user_preferences
+                    )
+
+                    # Prevent duplicate alerts for the same type and symbol within a short period
+                    existing_alerts = self.alert_service.get_alerts_for_user(
+                        user_id, active_only=True
+                    )
+                    alert_exists = any(
+                        alert.alert_type == alert_type
+                        and alert.symbol == holding.symbol
+                        and (datetime.now() - alert.triggered_at).total_seconds()
+                        < 3600  # Within last hour
+                        for alert in existing_alerts
+                    )
+
+                    if not alert_exists:
                         self.alert_service.create_alert(
                             Alert(
                                 user_id=user_id,
                                 portfolio_id=portfolio.user_id,
-                                alert_type="news_sentiment",
+                                alert_type=alert_type,
                                 symbol=holding.symbol,
                                 message=message,
                                 triggered_at=datetime.now(),
+                                relevance_score=relevance_score,
                             )
                         )
                         print(f"    {message}")
                     else:
                         print(
-                            f"    Duplicate news sentiment alert for {holding.symbol} already exists."
+                            f"    Duplicate price change alert for {holding.symbol} already exists."
                         )
+            else:
+                print(
+                    f"    Previous price for {holding.symbol} is not valid. Cannot calculate change."
+                )
 
 
 if __name__ == "__main__":
@@ -210,7 +348,8 @@ if __name__ == "__main__":
 
     # Initialize services
     alert_service = AlertService()
-    monitoring_service = MonitoringService(alert_service)
+    relevance_model = RelevanceModel()
+    monitoring_service = MonitoringService(alert_service, relevance_model)
 
     # Create a test portfolio
     test_holdings = [

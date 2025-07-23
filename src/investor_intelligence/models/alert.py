@@ -17,6 +17,7 @@ class Alert:
     created_at: datetime = field(default_factory=datetime.now)
     is_active: bool = True
     triggered_at: Optional[datetime] = None
+    relevance_score: Optional[float] = None  # Added for prioritization
 
     def __post_init__(self):
         if not self.user_id:
