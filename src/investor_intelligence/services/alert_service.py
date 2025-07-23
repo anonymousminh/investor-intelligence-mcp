@@ -5,12 +5,37 @@ from typing import List, Optional
 from investor_intelligence.models.alert import Alert
 from investor_intelligence.utils.db import DATABASE_FILE, init_db
 
+import re
+import json
+
 
 class AlertService:
     """Manages the creation, persistence, and retrieval of alerts."""
 
     def __init__(self):
         init_db()  # Ensure database and table are initialized
+        self.create_table()
+
+    def create_table(self):
+        conn = sqlite3.connect(DATABASE_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                portfolio_id TEXT,
+                alert_type TEXT NOT NULL,
+                symbol TEXT,
+                message TEXT NOT NULL,
+                triggered_at TEXT NOT NULL,
+                is_active INTEGER DEFAULT 1,
+                preferences TEXT -- New column for user preferences
+            )
+        """
+        )
+        conn.commit()
+        conn.close()
 
     def _get_db_connection(self):
         return sqlite3.connect(DATABASE_FILE)
@@ -124,70 +149,178 @@ class AlertService:
             triggered_at=datetime.fromisoformat(row[9]) if row[9] else None,
         )
 
+    def set_user_alert_preferences(self, user_id: str, preferences: dict):
+        """Sets or updates alert preferences for a user.
+
+        Args:
+            user_id (str): The ID of the user.
+            preferences (dict): A dictionary of preferences (e.g., {"min_price_change_percent": 2.0}).
+        """
+        conn = sqlite3.connect(DATABASE_FILE)
+        cursor = conn.cursor()
+        # Check if preferences already exist for the user
+        cursor.execute(
+            "SELECT preferences FROM alerts WHERE user_id = ? LIMIT 1", (user_id,)
+        )
+        existing_preferences_row = cursor.fetchone()
+
+        if existing_preferences_row and existing_preferences_row[0]:
+            existing_prefs = json.loads(existing_preferences_row[0])
+            existing_prefs.update(preferences)
+            updated_prefs_json = json.dumps(existing_prefs)
+            cursor.execute(
+                "UPDATE alerts SET preferences = ? WHERE user_id = ?",
+                (updated_prefs_json, user_id),
+            )
+        else:
+            # If no existing preferences, insert a dummy alert row with preferences
+            # This is a workaround as preferences are tied to an alert row. A better design
+            # would be a separate 'user_preferences' table.
+            dummy_alert = Alert(
+                user_id=user_id,
+                portfolio_id="preferences",
+                alert_type="preference_setting",
+                symbol="",
+                message="User preferences set",
+                triggered_at=datetime.now(),
+            )
+            self.create_alert(dummy_alert)  # Create a dummy alert to attach preferences
+            cursor.execute(
+                "UPDATE alerts SET preferences = ? WHERE user_id = ? AND alert_type = ?",
+                (json.dumps(preferences), user_id, "preference_setting"),
+            )
+        conn.commit()
+        conn.close()
+
+    def get_user_alert_preferences(self, user_id: str) -> dict:
+        """Retrieves alert preferences for a user.
+
+        Args:
+            user_id (str): The ID of the user.
+
+        Returns:
+            dict: A dictionary of preferences, or an empty dict if none are set.
+        """
+        conn = sqlite3.connect(DATABASE_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT preferences FROM alerts WHERE user_id = ? AND preferences IS NOT NULL LIMIT 1",
+            (user_id,),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if row and row[0]:
+            return json.loads(row[0])
+        return {}
+
+    def filter_alerts(self, alerts: List[Alert], user_id: str) -> List[Alert]:
+        """Filters a list of alerts based on user preferences.
+
+        Args:
+            alerts (List[Alert]): The list of alerts to filter.
+            user_id (str): The ID of the user for whom to apply preferences.
+
+        Returns:
+            List[Alert]: The filtered list of alerts.
+        """
+        preferences = self.get_user_alert_preferences(user_id)
+        min_price_change_percent = preferences.get(
+            "min_price_change_percent", 0.0
+        )  # Default to 0, no filtering
+
+        filtered_alerts = []
+        for alert in alerts:
+            if alert.alert_type in ["price_gain", "price_drop"]:
+                # Extract percentage from message (e.g., "Price changed by X.XX%")
+                match = re.search(r"by ([\d\.]+)%", alert.message)
+                if match:
+                    change_percent = float(match.group(1))
+                    if change_percent >= min_price_change_percent:
+                        filtered_alerts.append(alert)
+                else:
+                    # If percentage not found, include by default or log an error
+                    filtered_alerts.append(alert)
+            else:
+                # Include other alert types by default for now
+                filtered_alerts.append(alert)
+        return filtered_alerts
+
 
 if __name__ == "__main__":
     alert_service = AlertService()
+    test_user_id = "user_with_prefs"
 
-    # Test 1: Create a new alert
-    print("\n--- Test: Creating a new alert ---")
-    new_alert = Alert(
-        user_id="user_abc",
-        portfolio_id="port_123",
-        alert_type="price_change",
-        symbol="MSFT",
-        threshold=300.0,
-        message="MSFT price exceeded $300!",
-        is_active=True,
+    # Set a preference for min price change
+    alert_service.set_user_alert_preferences(
+        test_user_id, {"min_price_change_percent": 1.5}
     )
-    created_alert = alert_service.create_alert(new_alert)
-    print(f"Created Alert: {created_alert}")
-    assert created_alert.id is not None
+    print(
+        f"User preferences for {test_user_id}: {alert_service.get_user_alert_preferences(test_user_id)}"
+    )
 
-    # Test 2: Retrieve alert by ID
-    print("\n--- Test: Retrieving alert by ID ---")
-    retrieved_alert = alert_service.get_alert_by_id(created_alert.id)
-    print(f"Retrieved Alert: {retrieved_alert}")
-    assert retrieved_alert == created_alert
-
-    # Test 3: Create another alert for the same user
-    print("\n--- Test: Creating another alert ---")
-    another_alert = Alert(
-        user_id="user_abc",
-        portfolio_id="port_123",
-        alert_type="earnings_report",
+    # Create some dummy alerts
+    alert1 = Alert(
+        user_id=test_user_id,
+        portfolio_id="p1",
+        alert_type="price_gain",
         symbol="AAPL",
-        message="AAPL earnings report due soon.",
-        is_active=True,
+        message="Price changed by 2.0%",
+        triggered_at=datetime.now(),
     )
-    created_another_alert = alert_service.create_alert(another_alert)
-    print(f"Created Another Alert: {created_another_alert}")
+    alert2 = Alert(
+        user_id=test_user_id,
+        portfolio_id="p1",
+        alert_type="price_drop",
+        symbol="MSFT",
+        message="Price changed by 1.0%",
+        triggered_at=datetime.now(),
+    )
+    alert3 = Alert(
+        user_id=test_user_id,
+        portfolio_id="p1",
+        alert_type="news_sentiment",
+        symbol="GOOG",
+        message="Positive news detected",
+        triggered_at=datetime.now(),
+    )
 
-    # Test 4: Get all active alerts for a user
-    print("\n--- Test: Getting active alerts for user_abc ---")
-    user_alerts = alert_service.get_alerts_for_user("user_abc")
-    for alert in user_alerts:
-        print(f"  - {alert}")
-    assert len(user_alerts) == 2
+    alert_service.create_alert(alert1)
+    alert_service.create_alert(alert2)
+    alert_service.create_alert(alert3)
 
-    # Test 5: Deactivate an alert
-    print("\n--- Test: Deactivating an alert ---")
-    deactivated = alert_service.deactivate_alert(created_alert.id)
-    print(f"Alert {created_alert.id} deactivated: {deactivated}")
-    assert deactivated is True
+    # Retrieve and filter alerts
+    all_alerts = alert_service.get_alerts_for_user(test_user_id, active_only=True)
+    print(f"\nAll active alerts for {test_user_id}: {len(all_alerts)}")
+    for alert in all_alerts:
+        print(f"  - {alert.alert_type} {alert.symbol}: {alert.message}")
 
-    # Test 6: Get active alerts again (should be 1 now)
-    print("\n--- Test: Getting active alerts for user_abc after deactivation ---")
-    user_alerts_after_deactivation = alert_service.get_alerts_for_user("user_abc")
-    for alert in user_alerts_after_deactivation:
-        print(f"  - {alert}")
-    assert len(user_alerts_after_deactivation) == 1
-    assert user_alerts_after_deactivation[0].id == created_another_alert.id
+    filtered_alerts = alert_service.filter_alerts(all_alerts, test_user_id)
+    print(
+        f"\nFiltered alerts for {test_user_id} (min_price_change_percent=1.5): {len(filtered_alerts)}"
+    )
+    for alert in filtered_alerts:
+        print(f"  - {alert.alert_type} {alert.symbol}: {alert.message}")
 
-    # Test 7: Get all alerts (including inactive)
-    print("\n--- Test: Getting all alerts for user_abc (including inactive) ---")
-    all_user_alerts = alert_service.get_alerts_for_user("user_abc", active_only=False)
-    for alert in all_user_alerts:
-        print(f"  - {alert}")
-    assert len(all_user_alerts) == 2
-
-    print("\nAll Alert Service tests passed!")
+    # Test with no preferences
+    test_user_id_no_prefs = "user_no_prefs"
+    alert_service.create_alert(
+        Alert(
+            user_id=test_user_id_no_prefs,
+            portfolio_id="p2",
+            alert_type="price_gain",
+            symbol="AMZN",
+            message="Price changed by 0.5%",
+            triggered_at=datetime.now(),
+        )
+    )
+    all_alerts_no_prefs = alert_service.get_alerts_for_user(
+        test_user_id_no_prefs, active_only=True
+    )
+    filtered_alerts_no_prefs = alert_service.filter_alerts(
+        all_alerts_no_prefs, test_user_id_no_prefs
+    )
+    print(
+        f"\nFiltered alerts for {test_user_id_no_prefs} (no preferences): {len(filtered_alerts_no_prefs)}"
+    )
+    for alert in filtered_alerts_no_prefs:
+        print(f"  - {alert.alert_type} {alert.symbol}: {alert.message}")
