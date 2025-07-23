@@ -6,12 +6,14 @@ from investor_intelligence.services.portfolio_service import PortfolioService
 from investor_intelligence.services.alert_service import AlertService
 from investor_intelligence.models.portfolio import Portfolio, StockHolding
 from investor_intelligence.models.alert import Alert
+from investor_intelligence.services.analytics_service import AnalyticsService
 from datetime import date, datetime
 
 app = Flask(__name__)
 
 # Initialize services
 alert_service = AlertService()
+analytics_service = AnalyticsService()
 
 # IMPORTANT: Replace with your actual Google Sheet ID and range for a test user
 # In a real application, this would be dynamic based on the logged-in user
@@ -33,7 +35,18 @@ def index():
     # Get active alerts for the sample user
     alerts = alert_service.get_alerts_for_user(SAMPLE_USER_ID, active_only=True)
 
-    return render_template("index.html", portfolio=portfolio, alerts=alerts)
+    portfolio_performance = None
+    if portfolio:
+        portfolio_performance = analytics_service.calculate_portfolio_performance(
+            portfolio
+        )
+
+    return render_template(
+        "index.html",
+        portfolio=portfolio,
+        alerts=alerts,
+        performance=portfolio_performance,
+    )
 
 
 @app.route("/add_holding", methods=["POST"])
