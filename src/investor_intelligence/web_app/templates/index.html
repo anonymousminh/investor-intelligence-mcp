@@ -33,6 +33,18 @@
                         {% endfor %}
                     </tbody>
                 </table>
+                <!-- Portfolio Performance Section -->
+                {% if performance %}
+                <div class="portfolio-performance">
+                    <h3>Performance</h3>
+                    <ul>
+                        <li><strong>Total Current Value:</strong> ${{ "%.2f"|format(performance.total_current_value) }}</li>
+                        <li><strong>Total Purchase Value:</strong> ${{ "%.2f"|format(performance.total_purchase_value) }}</li>
+                        <li><strong>Total Return:</strong> ${{ "%.2f"|format(performance.total_return) }}</li>
+                        <li><strong>Percentage Return:</strong> {{ "%.2f"|format(performance.percentage_return) }}%</li>
+                    </ul>
+                </div>
+                {% endif %}
             {% else %}
                 <p>No portfolio data available. Please check your Google Sheet ID and range.</p>
             {% endif %}
