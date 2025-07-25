@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from investor_intelligence.models.alert import Alert
 from investor_intelligence.utils.db import DATABASE_FILE, init_db
+from investor_intelligence.services.user_config_service import UserConfigService
 
 import re
 import json
@@ -15,6 +16,7 @@ class AlertService:
     def __init__(self):
         init_db()  # Ensure database and table are initialized
         self.create_table()
+        self.user_config_service = UserConfigService()
 
     def create_table(self):
         conn = sqlite3.connect(DATABASE_FILE)
@@ -29,8 +31,7 @@ class AlertService:
                 symbol TEXT,
                 message TEXT NOT NULL,
                 triggered_at TEXT NOT NULL,
-                is_active INTEGER DEFAULT 1,
-                preferences TEXT
+                is_active INTEGER DEFAULT 1
             )
         """
         )
@@ -150,69 +151,62 @@ class AlertService:
             triggered_at=datetime.fromisoformat(row[9]) if row[9] else None,
         )
 
-    def set_user_alert_preferences(self, user_id: str, preferences: dict):
-        """Sets or updates alert preferences for a user.
+    # def set_user_alert_preferences(self, user_id: str, preferences: dict):
+    #     """Sets or updates alert preferences for a user.
 
-        Args:
-            user_id (str): The ID of the user.
-            preferences (dict): A dictionary of preferences (e.g., {"min_price_change_percent": 2.0}).
-        """
-        conn = sqlite3.connect(DATABASE_FILE)
-        cursor = conn.cursor()
-        # Check if preferences already exist for the user
-        cursor.execute(
-            "SELECT preferences FROM alerts WHERE user_id = ? LIMIT 1", (user_id,)
-        )
-        existing_preferences_row = cursor.fetchone()
+    #     Args:
+    #         user_id (str): The ID of the user.
+    #         preferences (dict): A dictionary of preferences (e.g., {"min_price_change_percent": 2.0}).
+    #     """
+    #     conn = sqlite3.connect(DATABASE_FILE)
+    #     cursor = conn.cursor()
+    #     # Check if preferences already exist for the user
+    #     cursor.execute(
+    #         "SELECT preferences FROM alerts WHERE user_id = ? LIMIT 1", (user_id,)
+    #     )
+    #     existing_preferences_row = cursor.fetchone()
 
-        if existing_preferences_row and existing_preferences_row[0]:
-            existing_prefs = json.loads(existing_preferences_row[0])
-            existing_prefs.update(preferences)
-            updated_prefs_json = json.dumps(existing_prefs)
-            cursor.execute(
-                "UPDATE alerts SET preferences = ? WHERE user_id = ?",
-                (updated_prefs_json, user_id),
-            )
-        else:
-            # If no existing preferences, insert a dummy alert row with preferences
-            # This is a workaround as preferences are tied to an alert row. A better design
-            # would be a separate 'user_preferences' table.
-            dummy_alert = Alert(
-                user_id=user_id,
-                portfolio_id="preferences",
-                alert_type="preference_setting",
-                symbol="",
-                message="User preferences set",
-                triggered_at=datetime.now(),
-            )
-            self.create_alert(dummy_alert)  # Create a dummy alert to attach preferences
-            cursor.execute(
-                "UPDATE alerts SET preferences = ? WHERE user_id = ? AND alert_type = ?",
-                (json.dumps(preferences), user_id, "preference_setting"),
-            )
-        conn.commit()
-        conn.close()
+    #     if existing_preferences_row and existing_preferences_row[0]:
+    #         existing_prefs = json.loads(existing_preferences_row[0])
+    #         existing_prefs.update(preferences)
+    #         updated_prefs_json = json.dumps(existing_prefs)
+    #         cursor.execute(
+    #             "UPDATE alerts SET preferences = ? WHERE user_id = ?",
+    #             (updated_prefs_json, user_id),
+    #         )
+    #     else:
+    #         # If no existing preferences, insert a dummy alert row with preferences
+    #         # This is a workaround as preferences are tied to an alert row. A better design
+    #         # would be a separate 'user_preferences' table.
+    #         dummy_alert = Alert(
+    #             user_id=user_id,
+    #             portfolio_id="preferences",
+    #             alert_type="preference_setting",
+    #             symbol="",
+    #             message="User preferences set",
+    #             triggered_at=datetime.now(),
+    #         )
+    #         self.create_alert(dummy_alert)  # Create a dummy alert to attach preferences
+    #         cursor.execute(
+    #             "UPDATE alerts SET preferences = ? WHERE user_id = ? AND alert_type = ?",
+    #             (json.dumps(preferences), user_id, "preference_setting"),
+    #         )
+    #     conn.commit()
+    #     conn.close()
 
-    def get_user_alert_preferences(self, user_id: str) -> dict:
-        """Retrieves alert preferences for a user.
+    # def get_user_alert_preferences(
+    #     self, user_id: str, portfolio_id: str = None
+    # ) -> dict:
+    #     """Retrieves alert preferences for a user from UserConfigService.
 
-        Args:
-            user_id (str): The ID of the user.
+    #     Args:
+    #         user_id (str): The ID of the user.
+    #         portfolio_id (str, optional): The ID of the portfolio for portfolio-specific preferences.
 
-        Returns:
-            dict: A dictionary of preferences, or an empty dict if none are set.
-        """
-        conn = sqlite3.connect(DATABASE_FILE)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT preferences FROM alerts WHERE user_id = ? AND preferences IS NOT NULL LIMIT 1",
-            (user_id,),
-        )
-        row = cursor.fetchone()
-        conn.close()
-        if row and row[0]:
-            return json.loads(row[0])
-        return {}
+    #     Returns:
+    #         dict: A dictionary of preferences, or an empty dict if none are set.
+    #     """
+    #     return self.user_config_service.get_user_config(user_id, portfolio_id)
 
     def filter_alerts(self, alerts: List[Alert], user_id: str) -> List[Alert]:
         """Filters a list of alerts based on user preferences.
@@ -224,7 +218,7 @@ class AlertService:
         Returns:
             List[Alert]: The filtered list of alerts.
         """
-        preferences = self.get_user_alert_preferences(user_id)
+        preferences = self.user_config_service.get_user_config(user_id)
         min_price_change_percent = preferences.get(
             "min_price_change_percent", 0.0
         )  # Default to 0, no filtering
@@ -251,12 +245,13 @@ if __name__ == "__main__":
     alert_service = AlertService()
     test_user_id = "user_with_prefs"
 
-    # Set a preference for min price change
-    alert_service.set_user_alert_preferences(
-        test_user_id, {"min_price_change_percent": 1.5}
-    )
+    # Set a preference for min price change using UserConfigService directly
+    user_config_service = UserConfigService()
+    user_config = user_config_service.get_user_config(test_user_id)
+    user_config["min_price_change_percent"] = 1.5
+    user_config_service.save_user_config(test_user_id, user_config)
     print(
-        f"User preferences for {test_user_id}: {alert_service.get_user_alert_preferences(test_user_id)}"
+        f"User preferences for {test_user_id}: {user_config_service.get_user_config(test_user_id)}"
     )
 
     # Create some dummy alerts

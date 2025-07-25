@@ -157,8 +157,39 @@ def process_incoming_email_queries():
         print("No new email queries to process.")
 
 
+def run_monitoring_jobs():
+    print(f"\n--- Running daily monitoring jobs at {datetime.now()} ---")
+    for user_data in USERS_TO_MONITOR:
+        user_id = user_data["user_id"]
+        portfolio_name = user_data["portfolio_name"]
+        portfolio_config = PORTFOLIO_MAPPING.get(user_id)
+        if not portfolio_config:
+            print(
+                f"No portfolio configuration found for user {user_id}. Skipping monitoring."
+            )
+            continue
+        portfolio_service = PortfolioService(
+            portfolio_config["spreadsheet_id"], portfolio_config["range_name"]
+        )
+        portfolio = portfolio_service.load_portfolio_from_sheets(
+            user_id, portfolio_name
+        )
+        if portfolio:
+            print(f"Monitoring for {user_id} - {portfolio.name}...")
+            monitoring_service.monitor_earnings_reports(user_id, portfolio)
+            monitoring_service.monitor_news_sentiment(user_id, portfolio)
+            monitoring_service.monitor_price_changes(user_id, portfolio)
+        else:
+            print(f"Could not load portfolio for user {user_id}. Skipping monitoring.")
+
+
 if __name__ == "__main__":
     scheduler = BackgroundScheduler()
+
+    # Schedule daily monitoring (e.g., every day at 7:00 AM)
+    scheduler.add_job(
+        run_monitoring_jobs, CronTrigger(hour=7, minute=0, day_of_week="*")
+    )
 
     # Schedule daily summary (e.g., every day at 8:00 AM)
     scheduler.add_job(
