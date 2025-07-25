@@ -1,11 +1,13 @@
 import os
 import requests
 from datetime import datetime, timedelta
+from functools import lru_cache
 
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 NEWS_API_BASE_URL = "https://newsapi.org/v2/everything"  # Example for NewsAPI.org
 
 
+@lru_cache(maxsize=64)
 def get_news_articles(
     query: str,
     from_date: str = None,
