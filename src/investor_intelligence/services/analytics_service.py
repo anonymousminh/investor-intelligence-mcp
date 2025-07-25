@@ -10,6 +10,7 @@ from investor_intelligence.tools.alpha_vantage_tool import (
 )
 
 import yfinance as yf
+from investor_intelligence.services.user_config_service import UserConfigService
 
 
 class AnalyticsService:
@@ -230,11 +231,15 @@ class AnalyticsService:
             "diversification_score": diversification_score,
         }
 
-    def get_optimization_suggestions(self, portfolio: Portfolio) -> List[str]:
-        """Provides basic portfolio optimization suggestions based on diversification.
+    def get_optimization_suggestions(
+        self, portfolio: Portfolio, user_id: str = None, portfolio_id: str = None
+    ) -> List[str]:
+        """Provides basic portfolio optimization suggestions based on diversification and user risk profile.
 
         Args:
             portfolio (Portfolio): The portfolio to analyze.
+            user_id (str, optional): The user ID to fetch risk profile from config.
+            portfolio_id (str, optional): The portfolio ID for portfolio-specific config.
 
         Returns:
             List[str]: A list of optimization suggestions.
@@ -242,6 +247,13 @@ class AnalyticsService:
         suggestions = []
         diversification_analysis = self.analyze_diversification(portfolio)
         sector_distribution = diversification_analysis["sector_distribution"]
+
+        # Fetch user risk profile if user_id is provided
+        risk_profile = "moderate"
+        if user_id is not None:
+            user_config_service = UserConfigService()
+            config = user_config_service.get_user_config(user_id, portfolio_id)
+            risk_profile = config.get("risk_profile", "moderate")
 
         if not sector_distribution:
             suggestions.append(
@@ -252,26 +264,58 @@ class AnalyticsService:
         # Identify over-concentrated sectors
         for sector, percentage in sector_distribution.items():
             if percentage > 50:  # Arbitrary threshold for over-concentration
-                suggestions.append(
-                    f"Consider reducing exposure to the {sector} sector, which accounts for {percentage:.2f}% of your portfolio."
-                )
+                if risk_profile == "conservative":
+                    suggestions.append(
+                        f"As a conservative investor, consider reducing exposure to the {sector} sector, which accounts for {percentage:.2f}% of your portfolio. Diversification can help reduce risk."
+                    )
+                elif risk_profile == "aggressive":
+                    suggestions.append(
+                        f"As an aggressive investor, high concentration in {sector} ({percentage:.2f}%) may align with your risk tolerance, but be aware of potential volatility."
+                    )
+                else:
+                    suggestions.append(
+                        f"Consider reducing exposure to the {sector} sector, which accounts for {percentage:.2f}% of your portfolio."
+                    )
 
-        # Identify under-represented sectors (requires a predefined list of desired sectors)
-        # For simplicity, let's suggest adding holdings if diversification score is low
+        # Suggest further diversification if score is low
         if (
             diversification_analysis["diversification_score"] < 5
         ):  # Arbitrary low score threshold
-            suggestions.append(
-                "Your portfolio could benefit from further diversification across different sectors or asset classes."
-            )
-            suggestions.append(
-                "Explore adding holdings in sectors like Healthcare, Energy, or Financials if you are currently concentrated in Technology."
-            )
+            if risk_profile == "conservative":
+                suggestions.append(
+                    "As a conservative investor, your portfolio could benefit from further diversification across stable sectors or asset classes."
+                )
+                suggestions.append(
+                    "Explore adding holdings in sectors like Healthcare, Utilities, or Consumer Staples for lower volatility."
+                )
+            elif risk_profile == "aggressive":
+                suggestions.append(
+                    "As an aggressive investor, you may seek higher returns with concentrated positions, but diversification can still help manage downside risk."
+                )
+                suggestions.append(
+                    "Consider balancing high-growth sectors with some defensive holdings to mitigate risk."
+                )
+            else:
+                suggestions.append(
+                    "Your portfolio could benefit from further diversification across different sectors or asset classes."
+                )
+                suggestions.append(
+                    "Explore adding holdings in sectors like Healthcare, Energy, or Financials if you are currently concentrated in Technology."
+                )
 
         if not suggestions:
-            suggestions.append(
-                "Your portfolio appears reasonably diversified based on current analysis. Continue to monitor and rebalance as needed."
-            )
+            if risk_profile == "conservative":
+                suggestions.append(
+                    "Your portfolio appears reasonably diversified for a conservative risk profile. Continue to monitor and rebalance as needed."
+                )
+            elif risk_profile == "aggressive":
+                suggestions.append(
+                    "Your portfolio appears reasonably diversified for an aggressive risk profile. Continue to monitor and rebalance as needed."
+                )
+            else:
+                suggestions.append(
+                    "Your portfolio appears reasonably diversified based on current analysis. Continue to monitor and rebalance as needed."
+                )
 
         return suggestions
 
@@ -352,7 +396,7 @@ if __name__ == "__main__":
 
     print("\n--- Testing Optimization Suggestions ---")
     optimization_suggestions = analytics_service.get_optimization_suggestions(
-        test_portfolio
+        test_portfolio, user_id="test_user_analytics"
     )
     for suggestion in optimization_suggestions:
         print(f"- {suggestion}")
