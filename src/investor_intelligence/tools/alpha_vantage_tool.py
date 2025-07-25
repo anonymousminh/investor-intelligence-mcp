@@ -6,6 +6,7 @@ from alpha_vantage.timeseries import TimeSeries
 import time
 from alpha_vantage.fundamentaldata import FundamentalData
 import requests
+from functools import lru_cache
 
 load_dotenv()
 
@@ -70,19 +71,21 @@ def get_historical_data(symbol, interval="1d", outputsize="compact"):
     return data
 
 
+@lru_cache(maxsize=128)
 def get_time_series_data(symbol):
-    """
-    Retrieve daily time series data (compact) for a given stock symbol.
-
-    Args:
-        symbol (str): The stock ticker symbol (e.g., 'AAPL').
-
-    Returns:
-        dict: Daily time series data indexed by date.
-    """
+    print(f"[API CALL] get_time_series_data for {symbol}")
     ts_local = TimeSeries(key=ALPHA_VANTAGE_API_KEY, output_format="json")
     data, _ = ts_local.get_daily(symbol=symbol, outputsize="compact")
     return data
+
+
+def get_time_series_data_cached(symbol):
+    if (
+        get_time_series_data.cache_info().hits > 0
+        and (symbol,) in get_time_series_data.cache_parameters
+    ):
+        print(f"[CACHE HIT] get_time_series_data for {symbol}")
+    return get_time_series_data(symbol)
 
 
 def get_intraday_data(symbol, interval="5min"):
@@ -103,72 +106,26 @@ def get_intraday_data(symbol, interval="5min"):
     return data
 
 
+@lru_cache(maxsize=128)
 def get_quote_endpoint(symbol):
-    """
-    Retrieve the latest quote data for a given stock symbol using Alpha Vantage's quote endpoint.
-
-    Args:
-        symbol (str): The stock ticker symbol (e.g., 'AAPL').
-
-    Returns:
-        dict: The latest quote data for the symbol.
-    """
+    print(f"[API CALL] get_quote_endpoint for {symbol}")
     ts_local = TimeSeries(key=ALPHA_VANTAGE_API_KEY, output_format="json")
     data, _ = ts_local.get_quote_endpoint(symbol=symbol)
     return data
 
 
-# def get_earnings_calendar(symbol=None, horizon="3month"):
-#     """
-#     Fetches earnings calendar data from Alpha Vantage API.
-
-#     Args:
-#         symbol (str, optional): Stock ticker symbol. If None, fetches all.
-#         horizon (str): '3month', '6month', or '12month'.
-
-#     Returns:
-#         dict: Earnings calendar data, or None if error.
-#     """
-#     url = "https://www.alphavantage.co/query"
-#     params = {
-#         "function": "EARNINGS_CALENDAR",
-#         "apikey": ALPHA_VANTAGE_API_KEY,
-#         "horizon": horizon,
-#     }
-#     if symbol:
-#         params["symbol"] = symbol
-
-#     response = requests.get(url, params=params)
-#     try:
-#         response.raise_for_status()
-#         try:
-#             data = response.json()
-#         except Exception as e:
-#             print(f"Error decoding JSON: {e}\nRaw response: {response.text}")
-#             return None
-#         # Check for Alpha Vantage error messages
-#         if any(k in data for k in ("Error Message", "Information", "Note")):
-#             print(f"Alpha Vantage API message: {data}")
-#             return None
-#         return data
-#     except Exception as e:
-#         print(f"Error fetching earnings calendar: {e}\nRaw response: {response.text}")
-#         return None
+def get_quote_endpoint_cached(symbol):
+    if (
+        get_quote_endpoint.cache_info().hits > 0
+        and (symbol,) in get_quote_endpoint.cache_parameters
+    ):
+        print(f"[CACHE HIT] get_quote_endpoint for {symbol}")
+    return get_quote_endpoint(symbol)
 
 
+@lru_cache(maxsize=32)
 def get_earnings_calendar(horizon="3month", symbol=None):
-    """Fetches earnings calendar data directly from Alpha Vantage API.
-
-    Note: The Alpha Vantage Earnings Calendar API returns CSV format data.
-
-    Args:
-        horizon (str): The reporting horizon ('3month', '6month', '12month').
-        symbol (str, optional): The stock ticker symbol. If None, returns full list.
-
-    Returns:
-        list: A list of dictionaries, where each dictionary represents an earnings event.
-              Each dictionary contains keys like 'symbol', 'reportDate', 'fiscalDateEnding', etc.
-    """
+    print(f"[API CALL] get_earnings_calendar for horizon={horizon}, symbol={symbol}")
     base_url = "https://www.alphavantage.co/query"
     params = {
         "function": "EARNINGS_CALENDAR",
@@ -204,6 +161,17 @@ def get_earnings_calendar(horizon="3month", symbol=None):
     except Exception as e:
         print(f"Error parsing earnings calendar data: {e}")
         return None
+
+
+def get_earnings_calendar_cached(horizon="3month", symbol=None):
+    if (
+        get_earnings_calendar.cache_info().hits > 0
+        and (horizon, symbol) in get_earnings_calendar.cache_parameters
+    ):
+        print(
+            f"[CACHE HIT] get_earnings_calendar for horizon={horizon}, symbol={symbol}"
+        )
+    return get_earnings_calendar(horizon, symbol)
 
 
 if __name__ == "__main__":
