@@ -8,6 +8,7 @@ from investor_intelligence.tools.alpha_vantage_tool import (
 from investor_intelligence.services.alert_service import AlertService
 from investor_intelligence.models.alert import Alert
 from investor_intelligence.ml.relevance_model import RelevanceModel
+from investor_intelligence.services.user_config_service import UserConfigService
 
 
 class MonitoringService:
@@ -16,6 +17,7 @@ class MonitoringService:
     def __init__(self, alert_service: AlertService, relevance_model: RelevanceModel):
         self.alert_service = alert_service
         self.relevance_model = RelevanceModel()
+        self.user_config_service = UserConfigService()
 
     def monitor_earnings_reports(self, user_id: str, portfolio: Portfolio):
         """Monitors upcoming earnings reports for stocks in a given portfolio and generates alerts."""
@@ -56,10 +58,8 @@ class MonitoringService:
 
                             if not alert_exists:
                                 # Calculate relevance score
-                                user_preferences = (
-                                    self.alert_service.get_user_alert_preferences(
-                                        user_id
-                                    )
+                                user_preferences = self.alert_service.user_config_service.get_user_config(
+                                    user_id
                                 )
                                 alert_dict = {
                                     "type": "earnings_report",
@@ -214,7 +214,9 @@ class MonitoringService:
                     if not alert_exists:
                         # Calculate relevance score
                         user_preferences = (
-                            self.alert_service.get_user_alert_preferences(user_id)
+                            self.alert_service.user_config_service.get_user_config(
+                                user_id
+                            )
                         )
                         alert_dict = {
                             "type": "news_sentiment",
@@ -250,9 +252,7 @@ class MonitoringService:
                             f"    Duplicate news sentiment alert for {holding.symbol} already exists."
                         )
 
-    def monitor_price_changes(
-        self, user_id: str, portfolio: Portfolio, threshold: float = 1.0
-    ):
+    def monitor_price_changes(self, user_id: str, portfolio: Portfolio):
         """Monitors price changes for stocks in a given portfolio and generates alerts.
 
         Args:
@@ -293,8 +293,8 @@ class MonitoringService:
                     message = f"ALERT: {holding.symbol} price changed by {percentage_change:.2f}% to ${current_price:.2f}."
 
                     # Calculate relevance score
-                    user_preferences = self.alert_service.get_user_alert_preferences(
-                        user_id
+                    user_preferences = (
+                        self.alert_service.user_config_service.get_user_config(user_id)
                     )
                     alert_dict = {
                         "type": alert_type,
@@ -304,6 +304,9 @@ class MonitoringService:
                     relevance_score = self.relevance_model.predict_relevance(
                         alert_dict, user_preferences
                     )
+
+                    user_config = self.user_config_service.get_user_config(user_id)
+                    threshold = user_config.get("price_change_threshold", 1.0)
 
                     # Prevent duplicate alerts for the same type and symbol within a short period
                     existing_alerts = self.alert_service.get_alerts_for_user(
@@ -341,10 +344,6 @@ class MonitoringService:
 
 
 if __name__ == "__main__":
-    from investor_intelligence.services.portfolio_service import PortfolioService
-    from investor_intelligence.services.alert_service import AlertService
-    from investor_intelligence.models.portfolio import Portfolio, StockHolding
-    from datetime import date
 
     # Initialize services
     alert_service = AlertService()
