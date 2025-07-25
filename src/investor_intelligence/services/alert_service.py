@@ -30,10 +30,11 @@ class AlertService:
                 message TEXT NOT NULL,
                 triggered_at TEXT NOT NULL,
                 is_active INTEGER DEFAULT 1,
-                preferences TEXT -- New column for user preferences
+                preferences TEXT
             )
         """
         )
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_id ON alerts (user_id)")
         conn.commit()
         conn.close()
 
