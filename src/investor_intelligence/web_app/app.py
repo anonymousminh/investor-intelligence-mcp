@@ -8,12 +8,14 @@ from investor_intelligence.models.portfolio import Portfolio, StockHolding
 from investor_intelligence.models.alert import Alert
 from investor_intelligence.services.analytics_service import AnalyticsService
 from datetime import date, datetime
+from investor_intelligence.services.monitoring_service import MonitoringService
 
 app = Flask(__name__)
 
 # Initialize services
 alert_service = AlertService()
 analytics_service = AnalyticsService()
+monitoring_service = MonitoringService(alert_service, analytics_service)
 
 # IMPORTANT: Replace with your actual Google Sheet ID and range for a test user
 # In a real application, this would be dynamic based on the logged-in user
@@ -80,6 +82,31 @@ def add_holding():
 def deactivate_alert(alert_id):
     alert_service.deactivate_alert(alert_id)
     return redirect(url_for("index"))
+
+
+@app.route("/monitor")
+def monitor():
+    # Load portfolio data for the sample user
+    portfolio = portfolio_service.load_portfolio_from_sheets(
+        SAMPLE_USER_ID, SAMPLE_PORTFOLIO_NAME
+    )
+    if not portfolio:
+        return "No portfolio found for monitoring."
+
+    # Run monitoring services
+    monitoring_service.monitor_earnings_reports(SAMPLE_USER_ID, portfolio)
+    monitoring_service.monitor_news_sentiment(SAMPLE_USER_ID, portfolio)
+    monitoring_service.monitor_price_changes(SAMPLE_USER_ID, portfolio)
+
+    # Get updated alerts
+    alerts = alert_service.get_alerts_for_user(SAMPLE_USER_ID, active_only=True)
+    return render_template(
+        "index.html",
+        portfolio=portfolio,
+        alerts=alerts,
+        performance=analytics_service.calculate_portfolio_performance(portfolio),
+        message="Monitoring complete. Alerts and behavior reflect your current configuration.",
+    )
 
 
 if __name__ == "__main__":

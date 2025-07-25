@@ -45,6 +45,24 @@
                     </ul>
                 </div>
                 {% endif %}
+                <!-- MonitoringService Summary Section -->
+                {% if monitoring_summary %}
+                <div class="monitoring-summary">
+                    <h3>Monitoring Summary</h3>
+                    <pre>{{ monitoring_summary }}</pre>
+                </div>
+                {% endif %}
+                <!-- AnalyticsService Insights Section -->
+                {% if analytics_insights %}
+                <div class="analytics-insights">
+                    <h3>Analytics Insights</h3>
+                    <ul>
+                        {% for insight in analytics_insights %}
+                            <li>{{ insight }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
             {% else %}
                 <p>No portfolio data available. Please check your Google Sheet ID and range.</p>
             {% endif %}
