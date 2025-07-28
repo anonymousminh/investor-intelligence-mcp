@@ -15,11 +15,16 @@ from investor_intelligence.tools.gmail_tool import (
     create_message,
 )
 from investor_intelligence.models.portfolio import Portfolio, StockHolding
+from investor_intelligence.ml.relevance_model import RelevanceModel
 from datetime import date, datetime
+import shutil
+from investor_intelligence.utils.logging import logger
+import os
 
 # Initialize services (ensure portfolio_service is configured with your Google Sheet ID)
 alert_service = AlertService()
-monitoring_service = MonitoringService(alert_service)
+relevance_model = RelevanceModel()
+monitoring_service = MonitoringService(alert_service, relevance_model)
 summary_service = SummaryService(alert_service, monitoring_service)
 nlp_service = NLPService()
 
@@ -58,7 +63,7 @@ def get_user_id_by_email(email: str) -> str:
 
 
 def send_daily_intelligence_summary():
-    print(f"\n--- Running daily intelligence summary job at {datetime.now()} ---")
+    logger.info(f"--- Running daily intelligence summary job at {datetime.now()} ---")
     for user_data in USERS_TO_MONITOR:
         user_id = user_data["user_id"]
         user_email = user_data["email"]
@@ -66,7 +71,9 @@ def send_daily_intelligence_summary():
 
         portfolio_config = PORTFOLIO_MAPPING.get(user_id)
         if not portfolio_config:
-            print(f"No portfolio configuration found for user {user_id}. Skipping.")
+            logger.warning(
+                f"No portfolio configuration found for user {user_id}. Skipping."
+            )
             continue
 
         portfolio_service = PortfolioService(
@@ -77,7 +84,7 @@ def send_daily_intelligence_summary():
         )
 
         if portfolio:
-            print(f"Generating summary for {user_id} - {portfolio.name}...")
+            logger.info(f"Generating summary for {user_id} - {portfolio.name}...")
             daily_summary = summary_service.generate_daily_summary(user_id, portfolio)
             gmail_service = get_gmail_service()
             sender_email = "me"  # 'me' refers to the authenticated user
@@ -89,13 +96,13 @@ def send_daily_intelligence_summary():
             )
             send_message(gmail_service, sender_email, message)
         else:
-            print(
+            logger.warning(
                 f"Could not load portfolio for user {user_id}. Skipping summary generation."
             )
 
 
 def send_weekly_intelligence_summary():
-    print(f"\n--- Running weekly intelligence summary job at {datetime.now()} ---")
+    logger.info(f"--- Running weekly intelligence summary job at {datetime.now()} ---")
     for user_data in USERS_TO_MONITOR:
         user_id = user_data["user_id"]
         user_email = user_data["email"]
@@ -103,7 +110,7 @@ def send_weekly_intelligence_summary():
 
         portfolio_config = PORTFOLIO_MAPPING.get(user_id)
         if not portfolio_config:
-            print(
+            logger.warning(
                 f"No portfolio configuration found for user {user_id}. Skipping weekly summary."
             )
             continue
@@ -116,7 +123,9 @@ def send_weekly_intelligence_summary():
         )
 
         if portfolio:
-            print(f"Generating weekly summary for {user_id} - {portfolio.name}...")
+            logger.info(
+                f"Generating weekly summary for {user_id} - {portfolio.name}..."
+            )
             weekly_summary = summary_service.generate_weekly_summary(user_id, portfolio)
             send_email(
                 user_email,
@@ -124,13 +133,13 @@ def send_weekly_intelligence_summary():
                 weekly_summary,
             )
         else:
-            print(
+            logger.warning(
                 f"Could not load portfolio for user {user_id}. Skipping weekly summary generation."
             )
 
 
 def process_incoming_email_queries():
-    print(f"\n--- Processing incoming email queries at {datetime.now()} ---")
+    logger.info(f"--- Processing incoming email queries at {datetime.now()} ---")
     # Fetch unread emails that might be queries
     # You might want to filter by sender or subject more strictly in a real app
     unread_emails = get_unread_emails(
@@ -146,25 +155,27 @@ def process_incoming_email_queries():
             # Attempt to map sender email to a user_id
             user_id = get_user_id_by_email(sender_email)
             if user_id:
-                print(f"Processing query from {sender_email} (User ID: {user_id})...")
+                logger.info(
+                    f"Processing query from {sender_email} (User ID: {user_id})..."
+                )
                 response_body = query_processor.process_email_query(
                     user_id, sender_email, email["body"]
                 )
                 send_email(sender_email, f"Re: {email['subject']}", response_body)
             else:
-                print(f"Unknown sender: {sender_email}. Skipping query.")
+                logger.warning(f"Unknown sender: {sender_email}. Skipping query.")
     else:
-        print("No new email queries to process.")
+        logger.info("No new email queries to process.")
 
 
 def run_monitoring_jobs():
-    print(f"\n--- Running daily monitoring jobs at {datetime.now()} ---")
+    logger.info(f"--- Running daily monitoring jobs at {datetime.now()} ---")
     for user_data in USERS_TO_MONITOR:
         user_id = user_data["user_id"]
         portfolio_name = user_data["portfolio_name"]
         portfolio_config = PORTFOLIO_MAPPING.get(user_id)
         if not portfolio_config:
-            print(
+            logger.warning(
                 f"No portfolio configuration found for user {user_id}. Skipping monitoring."
             )
             continue
@@ -175,16 +186,38 @@ def run_monitoring_jobs():
             user_id, portfolio_name
         )
         if portfolio:
-            print(f"Monitoring for {user_id} - {portfolio.name}...")
+            logger.info(f"Monitoring for {user_id} - {portfolio.name}...")
             monitoring_service.monitor_earnings_reports(user_id, portfolio)
             monitoring_service.monitor_news_sentiment(user_id, portfolio)
             monitoring_service.monitor_price_changes(user_id, portfolio)
         else:
-            print(f"Could not load portfolio for user {user_id}. Skipping monitoring.")
+            logger.warning(
+                f"Could not load portfolio for user {user_id}. Skipping monitoring."
+            )
+
+    def backup_database(db_path: str, backup_dir: str = "./backups"):
+        """Creates a timestamped backup of a SQLite database file."""
+        os.makedirs(backup_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        db_name = os.path.basename(db_path)
+        backup_path = os.path.join(backup_dir, f"{db_name}.{timestamp}.bak")
+        try:
+            shutil.copy2(db_path, backup_path)
+            logger.info(f"Successfully backed up {db_name} to {backup_path}")
+        except Exception as e:
+            logger.error(f"Error backing up {db_name}: {e}")
 
 
 if __name__ == "__main__":
     scheduler = BackgroundScheduler()
+
+    scheduler.add_job(
+        lambda: backup_database(AlertService.DB_FILE), CronTrigger(hour=3, minute=0)
+    )  # Daily backup at 3 AM
+    scheduler.add_job(
+        lambda: backup_database(UserConfigService.DB_FILE),
+        CronTrigger(hour=3, minute=0),
+    )  # Daily backup at 3 AM
 
     # Schedule daily monitoring (e.g., every day at 7:00 AM)
     scheduler.add_job(
@@ -207,7 +240,7 @@ if __name__ == "__main__":
 
     # Start the scheduler
     scheduler.start()
-    print("Scheduler started. Press Ctrl+C to exit.")
+    logger.info("Scheduler started. Press Ctrl+C to exit.")
 
     # Shut down the scheduler when the app exits
     atexit.register(lambda: scheduler.shutdown())
