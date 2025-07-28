@@ -1,7 +1,3 @@
-# This is a conceptual placeholder for a machine learning model
-# In a real scenario, this would involve training a model with historical data
-
-
 class RelevanceModel:
     """A conceptual class for a machine learning model to assess alert relevance."""
 
