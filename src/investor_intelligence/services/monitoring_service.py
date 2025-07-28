@@ -27,7 +27,9 @@ class MonitoringService:
         earnings_calendar = get_earnings_calendar(horizon="3month")
 
         if not earnings_calendar:
-            print("  Could not retrieve earnings calendar data.")
+            print(
+                "Could not retrieve earnings calendar data. Skipping earnings monitoring."
+            )
             return
 
         for holding in portfolio.holdings:
@@ -267,7 +269,9 @@ class MonitoringService:
             print(f"  - Checking price for {holding.symbol}...")
             current_price = get_current_price(holding.symbol)
             if current_price is None:
-                print(f"    Could not retrieve current price for {holding.symbol}.")
+                print(
+                    f"Could not retrieve current price for {holding.symbol}. Skipping price change for this holding."
+                )
                 continue
 
             # For simplicity, let's assume we have a way to get the previous price.
