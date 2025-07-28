@@ -5,6 +5,11 @@ from typing import List, Optional
 from investor_intelligence.models.alert import Alert
 from investor_intelligence.utils.db import DATABASE_FILE, init_db
 from investor_intelligence.services.user_config_service import UserConfigService
+from investor_intelligence.tools.gmail_tool import (
+    send_message,
+    get_gmail_service,
+    create_message,
+)
 
 import re
 import json
@@ -151,63 +156,6 @@ class AlertService:
             triggered_at=datetime.fromisoformat(row[9]) if row[9] else None,
         )
 
-    # def set_user_alert_preferences(self, user_id: str, preferences: dict):
-    #     """Sets or updates alert preferences for a user.
-
-    #     Args:
-    #         user_id (str): The ID of the user.
-    #         preferences (dict): A dictionary of preferences (e.g., {"min_price_change_percent": 2.0}).
-    #     """
-    #     conn = sqlite3.connect(DATABASE_FILE)
-    #     cursor = conn.cursor()
-    #     # Check if preferences already exist for the user
-    #     cursor.execute(
-    #         "SELECT preferences FROM alerts WHERE user_id = ? LIMIT 1", (user_id,)
-    #     )
-    #     existing_preferences_row = cursor.fetchone()
-
-    #     if existing_preferences_row and existing_preferences_row[0]:
-    #         existing_prefs = json.loads(existing_preferences_row[0])
-    #         existing_prefs.update(preferences)
-    #         updated_prefs_json = json.dumps(existing_prefs)
-    #         cursor.execute(
-    #             "UPDATE alerts SET preferences = ? WHERE user_id = ?",
-    #             (updated_prefs_json, user_id),
-    #         )
-    #     else:
-    #         # If no existing preferences, insert a dummy alert row with preferences
-    #         # This is a workaround as preferences are tied to an alert row. A better design
-    #         # would be a separate 'user_preferences' table.
-    #         dummy_alert = Alert(
-    #             user_id=user_id,
-    #             portfolio_id="preferences",
-    #             alert_type="preference_setting",
-    #             symbol="",
-    #             message="User preferences set",
-    #             triggered_at=datetime.now(),
-    #         )
-    #         self.create_alert(dummy_alert)  # Create a dummy alert to attach preferences
-    #         cursor.execute(
-    #             "UPDATE alerts SET preferences = ? WHERE user_id = ? AND alert_type = ?",
-    #             (json.dumps(preferences), user_id, "preference_setting"),
-    #         )
-    #     conn.commit()
-    #     conn.close()
-
-    # def get_user_alert_preferences(
-    #     self, user_id: str, portfolio_id: str = None
-    # ) -> dict:
-    #     """Retrieves alert preferences for a user from UserConfigService.
-
-    #     Args:
-    #         user_id (str): The ID of the user.
-    #         portfolio_id (str, optional): The ID of the portfolio for portfolio-specific preferences.
-
-    #     Returns:
-    #         dict: A dictionary of preferences, or an empty dict if none are set.
-    #     """
-    #     return self.user_config_service.get_user_config(user_id, portfolio_id)
-
     def filter_alerts(self, alerts: List[Alert], user_id: str) -> List[Alert]:
         """Filters a list of alerts based on user preferences.
 
@@ -239,6 +187,12 @@ class AlertService:
                 # Include other alert types by default for now
                 filtered_alerts.append(alert)
         return filtered_alerts
+
+    def send_admin_error_alert(error_message: str):
+        admin_email = "anhminh7802@gmail.com"
+        subject = f"CRITICAL ERROR in Investor Intelligence Agent: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        body = f"A critical error occurred in the Investor Intelligence Agent MCP Server:\n\n{error_message}\n\nPlease investigate immediately."
+        send_message(admin_email, subject, body)
 
 
 if __name__ == "__main__":
