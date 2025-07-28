@@ -11,6 +11,7 @@ from alpha_vantage.timeseries import TimeSeries
 # Mock the TimeSeries class from alpha_vantage.timeseries
 @patch("investor_intelligence.tools.alpha_vantage_tool.TimeSeries")
 def test_get_time_series_data(mock_timeseries):
+    get_time_series_data.cache_clear()
     mock_ts_instance = MagicMock()
     mock_timeseries.return_value = mock_ts_instance
 
