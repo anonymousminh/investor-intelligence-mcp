@@ -30,6 +30,15 @@ def mock_news_tool():
 
 
 def test_monitoring_service_triggers_alert(mock_alpha_vantage_tool, mock_news_tool):
+    # Get the project root directory and ensure data directory exists
+    import os
+
+    project_root = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
+    data_dir = os.path.join(project_root, "data")
+    os.makedirs(data_dir, exist_ok=True)
+
     alert_service = AlertService()
     relevance_model = RelevanceModel()
     monitoring_service = MonitoringService(alert_service, relevance_model)

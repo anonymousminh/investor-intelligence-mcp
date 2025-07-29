@@ -21,11 +21,18 @@ from investor_intelligence.ml.relevance_model import RelevanceModel
 
 @pytest.fixture(scope="module")
 def setup_test_environment():
+    # Get the project root directory
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    data_dir = os.path.join(project_root, "data")
+
+    # Ensure data directory exists
+    os.makedirs(data_dir, exist_ok=True)
+
     # Clean up any existing test databases or files
-    if os.path.exists("data/alerts.db"):
-        os.remove("data/alerts.db")
-    if os.path.exists("data/user_configs.db"):
-        os.remove("data/user_configs.db")
+    if os.path.exists(os.path.join(data_dir, "investor_intelligence.db")):
+        os.remove(os.path.join(data_dir, "investor_intelligence.db"))
+    if os.path.exists(os.path.join(data_dir, "user_configs.db")):
+        os.remove(os.path.join(data_dir, "user_configs.db"))
 
     # Initialize services with clean state
     alert_service = AlertService()
@@ -85,10 +92,10 @@ def setup_test_environment():
     }
 
     # Teardown (clean up after tests)
-    if os.path.exists("data/alerts.db"):
-        os.remove("data/alerts.db")
-    if os.path.exists("data/user_configs.db"):
-        os.remove("data/user_configs.db")
+    if os.path.exists(os.path.join(data_dir, "investor_intelligence.db")):
+        os.remove(os.path.join(data_dir, "investor_intelligence.db"))
+    if os.path.exists(os.path.join(data_dir, "user_configs.db")):
+        os.remove(os.path.join(data_dir, "user_configs.db"))
 
 
 # --- Test Functions ---
