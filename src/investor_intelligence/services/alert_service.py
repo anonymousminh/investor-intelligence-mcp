@@ -19,33 +19,44 @@ class AlertService:
     """Manages the creation, persistence, and retrieval of alerts."""
 
     def __init__(self):
-        init_db()  # Ensure database and table are initialized
-        self.create_table()
-        self.user_config_service = UserConfigService()
+        try:
+            init_db()  # Ensure database and table are initialized
+            self.create_table()
+            self.user_config_service = UserConfigService()
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize AlertService: {e}")
 
     def create_table(self):
-        conn = sqlite3.connect(DATABASE_FILE)
-        cursor = conn.cursor()
-        cursor.execute(
+        try:
+            conn = sqlite3.connect(DATABASE_FILE)
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS alerts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    portfolio_id TEXT,
+                    alert_type TEXT NOT NULL,
+                    symbol TEXT,
+                    message TEXT NOT NULL,
+                    triggered_at TEXT NOT NULL,
+                    is_active INTEGER DEFAULT 1
+                )
             """
-            CREATE TABLE IF NOT EXISTS alerts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
-                portfolio_id TEXT,
-                alert_type TEXT NOT NULL,
-                symbol TEXT,
-                message TEXT NOT NULL,
-                triggered_at TEXT NOT NULL,
-                is_active INTEGER DEFAULT 1
             )
-        """
-        )
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_id ON alerts (user_id)")
-        conn.commit()
-        conn.close()
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_id ON alerts (user_id)")
+            conn.commit()
+            conn.close()
+        except sqlite3.OperationalError as e:
+            raise RuntimeError(
+                f"Cannot create alerts table in database at {DATABASE_FILE}: {e}"
+            )
 
     def _get_db_connection(self):
-        return sqlite3.connect(DATABASE_FILE)
+        try:
+            return sqlite3.connect(DATABASE_FILE)
+        except sqlite3.OperationalError as e:
+            raise RuntimeError(f"Cannot connect to database at {DATABASE_FILE}: {e}")
 
     def create_alert(self, alert: Alert) -> Alert:
         """Inserts a new alert into the database and returns the alert with its ID."""
