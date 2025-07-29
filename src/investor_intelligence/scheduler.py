@@ -19,6 +19,7 @@ from investor_intelligence.ml.relevance_model import RelevanceModel
 from datetime import date, datetime
 import shutil
 from investor_intelligence.utils.logging import logger
+from investor_intelligence.utils.db import DATABASE_FILE
 import os
 
 # Initialize services (ensure portfolio_service is configured with your Google Sheet ID)
@@ -212,7 +213,7 @@ if __name__ == "__main__":
     scheduler = BackgroundScheduler()
 
     scheduler.add_job(
-        lambda: backup_database(AlertService.DB_FILE), CronTrigger(hour=3, minute=0)
+        lambda: backup_database(DATABASE_FILE), CronTrigger(hour=3, minute=0)
     )  # Daily backup at 3 AM
     scheduler.add_job(
         lambda: backup_database(UserConfigService.DB_FILE),
