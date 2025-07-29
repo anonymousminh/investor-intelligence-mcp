@@ -9,6 +9,7 @@ from investor_intelligence.services.alert_service import AlertService
 from investor_intelligence.models.alert import Alert
 from investor_intelligence.ml.relevance_model import RelevanceModel
 from investor_intelligence.services.user_config_service import UserConfigService
+import time
 
 
 class MonitoringService:
@@ -254,7 +255,7 @@ class MonitoringService:
                             f"    Duplicate news sentiment alert for {holding.symbol} already exists."
                         )
 
-    def monitor_price_changes(self, user_id: str, portfolio: Portfolio):
+    def monitor_price_changes(self, user_id: str, portfolio: Portfolio, threshold):
         """Monitors price changes for stocks in a given portfolio and generates alerts.
 
         Args:
@@ -346,6 +347,13 @@ class MonitoringService:
                     f"    Previous price for {holding.symbol} is not valid. Cannot calculate change."
                 )
 
+        start_time = time.time()
+        current_price = get_current_price(holding.symbol)
+        end_time = time.time()
+        print(
+            f"Get current price time for {holding.symbol} took: {end_time - start_time:.4f} seconds"
+        )
+
 
 if __name__ == "__main__":
 
@@ -381,3 +389,6 @@ if __name__ == "__main__":
     for alert in alerts:
         if alert.alert_type == "news_sentiment":
             print(f"  - {alert.alert_type} for {alert.symbol}: {alert.message}")
+
+    print("Testing price monitoring...")
+    monitoring_service.monitor_price_changes(user_id, test_portfolio, threshold=0.1)
