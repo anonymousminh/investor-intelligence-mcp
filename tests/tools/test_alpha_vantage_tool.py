@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from investor_intelligence.tools.alpha_vantage_tool import (
-    get_time_series_data,
+    get_historical_data,
     get_intraday_data,
     get_quote_endpoint,
 )
@@ -9,11 +9,9 @@ from alpha_vantage.timeseries import TimeSeries
 
 
 # Mock the TimeSeries class from alpha_vantage.timeseries
-@patch("investor_intelligence.tools.alpha_vantage_tool.TimeSeries")
-def test_get_time_series_data(mock_timeseries):
-    get_time_series_data.cache_clear()
-    mock_ts_instance = MagicMock()
-    mock_timeseries.return_value = mock_ts_instance
+@patch("investor_intelligence.tools.alpha_vantage_tool.ts")
+def test_get_historical_data(mock_ts):
+    mock_ts_instance = mock_ts
 
     # Configure the mock to return sample data
     mock_ts_instance.get_daily.return_value = (
@@ -22,15 +20,9 @@ def test_get_time_series_data(mock_timeseries):
     )
 
     symbol = "TEST"
-    data = get_time_series_data(symbol)
+    data = get_historical_data(symbol)
 
-    # Check that TimeSeries was called with the correct arguments
-    mock_timeseries.assert_called_once()
-    call_args = mock_timeseries.call_args
-    assert call_args is not None
-    assert "key" in call_args.kwargs
-    assert call_args.kwargs["output_format"] == "json"
-
+    # Check that get_daily was called with the correct arguments
     mock_ts_instance.get_daily.assert_called_once_with(
         symbol=symbol, outputsize="compact"
     )
