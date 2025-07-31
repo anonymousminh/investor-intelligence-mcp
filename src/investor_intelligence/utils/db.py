@@ -72,9 +72,40 @@ def init_db():
                 message TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 is_active INTEGER NOT NULL DEFAULT 1,
-                triggered_at TEXT
+                triggered_at TEXT,
+                relevance_score REAL
             )
         """
+        )
+
+        # Create alert feedback table for tracking user interactions and relevance feedback
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS alert_feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                alert_id INTEGER NOT NULL,
+                user_id TEXT NOT NULL,
+                feedback_type TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                rating INTEGER,
+                relevance_score REAL,
+                interaction_duration REAL,
+                dismiss_reason TEXT,
+                notes TEXT,
+                FOREIGN KEY (alert_id) REFERENCES alerts (id) ON DELETE CASCADE
+            )
+        """
+        )
+
+        # Create indexes for better query performance
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_alert_feedback_alert_id ON alert_feedback (alert_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_alert_feedback_user_id ON alert_feedback (user_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_alert_feedback_timestamp ON alert_feedback (timestamp)"
         )
         conn.commit()
         conn.close()
