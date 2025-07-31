@@ -5,6 +5,7 @@ from typing import List, Optional
 from investor_intelligence.models.alert import Alert
 from investor_intelligence.utils.db import DATABASE_FILE, init_db
 from investor_intelligence.services.user_config_service import UserConfigService
+from investor_intelligence.services.alert_feedback_service import AlertFeedbackService
 from investor_intelligence.tools.gmail_tool import (
     send_message,
     get_gmail_service,
@@ -23,6 +24,7 @@ class AlertService:
             init_db()  # Ensure database and table are initialized
             self.create_table()
             self.user_config_service = UserConfigService()
+            self.feedback_service = AlertFeedbackService()
         except Exception as e:
             raise RuntimeError(f"Failed to initialize AlertService: {e}")
 
@@ -40,10 +42,21 @@ class AlertService:
                     symbol TEXT,
                     message TEXT NOT NULL,
                     triggered_at TEXT NOT NULL,
-                    is_active INTEGER DEFAULT 1
+                    is_active INTEGER DEFAULT 1,
+                    relevance_score REAL DEFAULT 0.0,
+                    feedback TEXT
                 )
             """
             )
+
+            # Add relevance_score column if it doesn't exist (for existing databases)
+            try:
+                cursor.execute(
+                    "ALTER TABLE alerts ADD COLUMN relevance_score REAL DEFAULT 0.0"
+                )
+            except sqlite3.OperationalError:
+                # Column already exists, ignore error
+                pass
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_id ON alerts (user_id)")
             conn.commit()
             conn.close()
@@ -64,8 +77,8 @@ class AlertService:
         cursor = conn.cursor()
         cursor.execute(
             """
-            INSERT INTO alerts (user_id, portfolio_id, alert_type, symbol, threshold, message, created_at, is_active, triggered_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO alerts (user_id, portfolio_id, alert_type, symbol, threshold, message, created_at, is_active, triggered_at, relevance_score)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 alert.user_id,
@@ -77,6 +90,7 @@ class AlertService:
                 alert.created_at.isoformat(),
                 int(alert.is_active),
                 alert.triggered_at.isoformat() if alert.triggered_at else None,
+                alert.relevance_score,
             ),
         )
         alert.id = cursor.lastrowid
@@ -121,7 +135,7 @@ class AlertService:
         cursor.execute(
             """
             UPDATE alerts
-            SET user_id = ?, portfolio_id = ?, alert_type = ?, symbol = ?, threshold = ?, message = ?, created_at = ?, is_active = ?, triggered_at = ?
+            SET user_id = ?, portfolio_id = ?, alert_type = ?, symbol = ?, threshold = ?, message = ?, created_at = ?, is_active = ?, triggered_at = ?, relevance_score = ?
             WHERE id = ?
         """,
             (
@@ -134,6 +148,7 @@ class AlertService:
                 alert.created_at.isoformat(),
                 int(alert.is_active),
                 alert.triggered_at.isoformat() if alert.triggered_at else None,
+                alert.relevance_score,
                 alert.id,
             ),
         )
@@ -154,18 +169,34 @@ class AlertService:
 
     def _row_to_alert(self, row) -> Alert:
         """Converts a database row tuple to an Alert object."""
-        return Alert(
-            id=row[0],
-            user_id=row[1],
-            portfolio_id=row[2],
-            alert_type=row[3],
-            symbol=row[4],
-            threshold=row[5],
-            message=row[6],
-            created_at=datetime.fromisoformat(row[7]),
-            is_active=bool(row[8]),
-            triggered_at=datetime.fromisoformat(row[9]) if row[9] else None,
-        )
+        # Handle different database schemas (with and without relevance_score)
+        if len(row) >= 11:  # New schema with relevance_score
+            return Alert(
+                id=row[0],
+                user_id=row[1],
+                portfolio_id=row[2],
+                alert_type=row[3],
+                symbol=row[4],
+                threshold=row[5],
+                message=row[6],
+                created_at=datetime.fromisoformat(row[7]),
+                is_active=bool(row[8]),
+                triggered_at=datetime.fromisoformat(row[9]) if row[9] else None,
+                relevance_score=row[10] if row[10] is not None else None,
+            )
+        else:  # Old schema without relevance_score
+            return Alert(
+                id=row[0],
+                user_id=row[1],
+                portfolio_id=row[2],
+                alert_type=row[3],
+                symbol=row[4],
+                threshold=row[5],
+                message=row[6],
+                created_at=datetime.fromisoformat(row[7]),
+                is_active=bool(row[8]),
+                triggered_at=datetime.fromisoformat(row[9]) if row[9] else None,
+            )
 
     def filter_alerts(self, alerts: List[Alert], user_id: str) -> List[Alert]:
         """Filters a list of alerts based on user preferences.
@@ -204,6 +235,97 @@ class AlertService:
         subject = f"CRITICAL ERROR in Investor Intelligence Agent: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         body = f"A critical error occurred in the Investor Intelligence Agent MCP Server:\n\n{error_message}\n\nPlease investigate immediately."
         send_message(admin_email, subject, body)
+
+    def track_alert_view(
+        self, alert_id: int, user_id: str, relevance_score: Optional[float] = None
+    ):
+        """Track when a user views an alert for feedback collection."""
+        try:
+            self.feedback_service.record_alert_view(alert_id, user_id, relevance_score)
+        except Exception as e:
+            print(f"Failed to track alert view: {e}")
+
+    def track_alert_click(
+        self, alert_id: int, user_id: str, interaction_duration: Optional[float] = None
+    ):
+        """Track when a user clicks on an alert (indicating interest)."""
+        try:
+            self.feedback_service.record_alert_click(
+                alert_id, user_id, interaction_duration
+            )
+        except Exception as e:
+            print(f"Failed to track alert click: {e}")
+
+    def track_alert_dismiss(
+        self, alert_id: int, user_id: str, reason: Optional[str] = None
+    ):
+        """Track when a user dismisses an alert."""
+        try:
+            self.feedback_service.record_alert_dismiss(alert_id, user_id, reason)
+        except Exception as e:
+            print(f"Failed to track alert dismiss: {e}")
+
+    def record_relevance_rating(
+        self, alert_id: int, user_id: str, rating: int, notes: Optional[str] = None
+    ):
+        """Record explicit relevance rating from user (1-5 scale)."""
+        try:
+            self.feedback_service.record_relevance_rating(
+                alert_id, user_id, rating, notes
+            )
+        except Exception as e:
+            print(f"Failed to record relevance rating: {e}")
+
+    def record_relevance_mark(self, alert_id: int, user_id: str, is_relevant: bool):
+        """Record when user explicitly marks an alert as relevant or irrelevant."""
+        try:
+            self.feedback_service.record_relevance_mark(alert_id, user_id, is_relevant)
+        except Exception as e:
+            print(f"Failed to record relevance mark: {e}")
+
+    def get_alert_engagement_score(self, alert_id: int) -> float:
+        """Get the engagement score for an alert based on user interactions."""
+        try:
+            return self.feedback_service.calculate_alert_engagement_score(alert_id)
+        except Exception as e:
+            print(f"Failed to get alert engagement score: {e}")
+            return 0.0
+
+    def get_user_feedback_summary(self, user_id: str, days_back: int = 30) -> dict:
+        """Get a summary of user feedback patterns."""
+        try:
+            return self.feedback_service.get_user_feedback_summary(user_id, days_back)
+        except Exception as e:
+            print(f"Failed to get user feedback summary: {e}")
+            return {
+                "total_interactions": 0,
+                "feedback_types": {},
+                "average_rating": 0.0,
+                "engagement_trend": "neutral",
+            }
+
+    def get_relevance_training_data(self, days_back: int = 90) -> List[dict]:
+        """Get training data for the relevance model from user feedback."""
+        try:
+            return self.feedback_service.get_relevance_training_data(days_back)
+        except Exception as e:
+            print(f"Failed to get relevance training data: {e}")
+            return []
+
+    def record_alert_feedback(self, alert_id: int, feedback: str):
+        """Records user feedback for a specific alert.
+
+        Args:
+            alert_id (int): The ID of the alert.
+            feedback (str): The feedback (e.g., "relevant", "irrelevant").
+        """
+        conn = self._get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE alerts SET feedback = ? WHERE id = ?", (feedback, alert_id)
+        )
+        conn.commit()
+        conn.close()
 
 
 if __name__ == "__main__":
