@@ -64,6 +64,19 @@ class MonitoringService:
                                 user_preferences = self.alert_service.user_config_service.get_user_config(
                                     user_id
                                 )
+                                portfolio_context = {
+                                    "symbol_held": [
+                                        h.symbol for h in portfolio.holdings
+                                    ],
+                                    "holdings_quantity": {
+                                        h.symbol: h.quantity for h in portfolio.holdings
+                                    },
+                                    "portfolio_value": sum(
+                                        h.quantity * get_current_price(h.symbol)
+                                        for h in portfolio.holdings
+                                        if get_current_price(h.symbol) is not None
+                                    ),
+                                }
                                 alert_dict = {
                                     "type": "earnings_report",
                                     "symbol": holding.symbol,
@@ -71,7 +84,7 @@ class MonitoringService:
                                 }
                                 relevance_score = (
                                     self.relevance_model.predict_relevance(
-                                        alert_dict, user_preferences
+                                        alert_dict, user_preferences, portfolio_context
                                     )
                                 )
                                 new_alert = Alert(
@@ -221,6 +234,18 @@ class MonitoringService:
                                 user_id
                             )
                         )
+
+                        portfolio_context = {
+                            "symbol_held": [h.symbol for h in portfolio.holdings],
+                            "holdings_quantity": {
+                                h.symbol: h.quantity for h in portfolio.holdings
+                            },
+                            "portfolio_value": sum(
+                                h.quantity * get_current_price(h.symbol)
+                                for h in portfolio.holdings
+                                if get_current_price(h.symbol) is not None
+                            ),
+                        }
                         alert_dict = {
                             "type": "news_sentiment",
                             "symbol": holding.symbol,
@@ -228,7 +253,7 @@ class MonitoringService:
                             "title": title,
                         }
                         relevance_score = self.relevance_model.predict_relevance(
-                            alert_dict, user_preferences
+                            alert_dict, user_preferences, portfolio_context
                         )
                         new_alert = Alert(
                             user_id=user_id,
@@ -301,13 +326,25 @@ class MonitoringService:
                     user_preferences = (
                         self.alert_service.user_config_service.get_user_config(user_id)
                     )
+
+                    portfolio_context = {
+                        "symbol_held": [h.symbol for h in portfolio.holdings],
+                        "holdings_quantity": {
+                            h.symbol: h.quantity for h in portfolio.holdings
+                        },
+                        "portfolio_value": sum(
+                            h.quantity * get_current_price(h.symbol)
+                            for h in portfolio.holdings
+                            if get_current_price(h.symbol) is not None
+                        ),
+                    }
                     alert_dict = {
                         "type": alert_type,
                         "symbol": holding.symbol,
                         "change": percentage_change,
                     }
                     relevance_score = self.relevance_model.predict_relevance(
-                        alert_dict, user_preferences
+                        alert_dict, user_preferences, portfolio_context
                     )
 
                     user_config = self.user_config_service.get_user_config(user_id)

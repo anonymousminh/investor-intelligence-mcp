@@ -11,13 +11,14 @@ from investor_intelligence.tools.alpha_vantage_tool import (
 
 import yfinance as yf
 from investor_intelligence.services.user_config_service import UserConfigService
+from investor_intelligence.services.alert_service import AlertService
 
 
 class AnalyticsService:
     """Service for performing portfolio analytics."""
 
     def __init__(self):
-        pass
+        self.alert_service = AlertService()
 
     def calculate_portfolio_performance(self, portfolio: Portfolio) -> dict:
         """Calculates key performance metrics for the given portfolio.
@@ -318,6 +319,68 @@ class AnalyticsService:
                 )
 
         return suggestions
+
+    def get_alert_effectiveness_metrics(self, user_id: Portfolio) -> dict:
+        """Calculates metrics for alert effectiveness.
+
+        Args:
+            user_id (str, optional): Filter metrics for a specific user. Defaults to None (all users).
+
+        Returns:
+            dict: A dictionary containing alert effectiveness metrics.
+        """
+        all_alerts = (
+            self.alert_service.get_alerts_for_user(user_id, active_only=False)
+            if user_id
+            else self.alert_service.get_all_alerts(active_only=False)
+        )  # Need a get_all_alerts method in AlertService
+
+        # Average Relevance Score
+        avg_relevance_score = (
+            sum(alert.relevance_score for alert in all_alerts) / total_alerts
+        )
+
+        # Feedback Distribution
+        feedback_counts = {"relevant": 0, "irrelevant": 0, "null": 0}
+        for alert in all_alerts:
+            feedback_counts[alert.feedback if alert.feedback else "null"] += 1
+
+        feedback_distribution = {
+            k: (v / total_alerts) * 100 for k, v in feedback_counts.items()
+        }
+
+        return {
+            "total_alerts": total_alerts,
+            "avg_relevance_score": avg_relevance_score,
+            "feedback_distribution": feedback_distribution,
+        }
+
+    def get_all_alerts(self, active_only: bool = True) -> List[Alert]:
+        conn = self.alert_service._get_db_connection()
+        cursor = conn.cursor()
+        query = "SELECT id, user_id, portfolio_id, alert_type, symbol, message, triggered_at, is_active, relevance_score, feedback FROM alerts"
+        if active_only:
+            query += " WHERE is_active = 1"
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        conn.close()
+        alerts = []
+        for row in rows:
+            alerts.append(
+                Alert(
+                    id=row[0],
+                    user_id=row[1],
+                    portfolio_id=row[2],
+                    alert_type=row[3],
+                    symbol=row[4],
+                    message=row[5],
+                    triggered_at=datetime.fromisoformat(row[6]),
+                    is_active=bool(row[7]),
+                    relevance_score=row[8] if row[8] is not None else 0.0,
+                    feedback=row[9],
+                )
+            )
+        return alerts
 
 
 if __name__ == "__main__":
