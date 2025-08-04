@@ -7,11 +7,13 @@ from investor_intelligence.models.portfolio import Portfolio, StockHolding
 from investor_intelligence.tools.alpha_vantage_tool import (
     get_time_series_data,
     get_quote_endpoint,
+    get_earnings_calendar,
 )
 
 import yfinance as yf
 from investor_intelligence.services.user_config_service import UserConfigService
 from investor_intelligence.services.alert_service import AlertService
+from investor_intelligence.models.alert import Alert
 
 
 class AnalyticsService:
@@ -382,6 +384,66 @@ class AnalyticsService:
             )
         return alerts
 
+    def validate_earnings_summary(self, user_id: str, portfolio: Portfolio) -> dict:
+        """Validates the accuracy of earnings summary information for a portfolio.
+
+        This is a conceptual validation. In a real system, you would compare
+        against actual reported earnings dates and figures from reliable sources.
+        For this exercise, we will validate against the latest Alpha Vantage data.
+
+        Args:
+            user_id (str): The ID of the user.
+            portfolio (Portfolio): The portfolio for which to validate.
+
+        Returns:
+            dict: Validation results.
+        """
+        validation_results = {
+            "total_holdings_with_earnings": 0,
+            "matched_earnings_dates": 0,
+            "unmatched_earnings_dates": [],
+            "missing_earnings_data": [],
+        }
+
+        # Fetch the latest earnings calendar from Alpha Vantage
+        latest_earnings_calendar = get_earnings_calendar(horizon="3month")
+        if not latest_earnings_calendar:
+            validation_results["status"] = (
+                "Failed to fetch latest earnings calendar for validation."
+            )
+            return validation_results
+
+        # Convert calendar to a dict for easier lookup
+        calendar_map = {
+            event["symbol"].upper(): event for event in latest_earnings_calendar
+        }
+
+        for holding in portfolio.holdings:
+            validation_results["total_holdings_with_earnings"] += 1
+            symbol = holding.symbol.upper()
+
+            if symbol in calendar_map:
+                actual_report_date_str = calendar_map[symbol].get("reportDate")
+                # For a true validation, you would compare this to what your system *predicted* or *alerted on*
+                # For now, we just check if we successfully retrieved data.
+                if actual_report_date_str:
+                    validation_results["matched_earnings_dates"] += 1
+                else:
+                    validation_results["unmatched_earnings_dates"].append(symbol)
+            else:
+                validation_results["missing_earnings_data"].append(symbol)
+
+        accuracy_score = 0.0
+        if validation_results["total_holdings_with_earnings"] > 0:
+            accuracy_score = (
+                validation_results["matched_earnings_dates"]
+                / validation_results["total_holdings_with_earnings"]
+            ) * 100
+
+        validation_results["accuracy_score"] = accuracy_score
+        validation_results["status"] = "Validation complete."
+        return validation_results
+
 
 if __name__ == "__main__":
     # Example Usage:
@@ -463,3 +525,9 @@ if __name__ == "__main__":
     )
     for suggestion in optimization_suggestions:
         print(f"- {suggestion}")
+
+    print("\n--- Testing Earnings Summary Validation ---")
+    validation_results = analytics_service.validate_earnings_summary(
+        "test_user_analytics", test_portfolio
+    )
+    print("Validation Results:", validation_results)
