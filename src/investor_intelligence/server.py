@@ -1,6 +1,7 @@
 import os
 from .mcp import MCPServer, Server
 from investor_intelligence.tools import tool
+from investor_intelligence.utils.metrics import track_latency
 
 # Import the tools and services developed in previous days
 from investor_intelligence.tools.alpha_vantage_tool import (
@@ -26,6 +27,7 @@ class InvestorIntelligenceServer(MCPServer):
         print("Investor Intelligence MCP Server initialized.")
 
     @tool("get_stock_price")
+    @track_latency("get_stock_price", "alpha_vantage_tool")
     def get_stock_price(self, ticker: str) -> float:
         """Retrieves the current stock price for a given ticker symbol.
 
@@ -41,6 +43,7 @@ class InvestorIntelligenceServer(MCPServer):
         return price
 
     @tool("get_portfolio_holdings")
+    @track_latency("get_portfolio_holdings", "portfolio_service")
     def get_portfolio_holdings(self, user_id: str, portfolio_name: str) -> dict:
         """Loads and returns the holdings of a specified user portfolio.
 
@@ -78,6 +81,7 @@ class InvestorIntelligenceServer(MCPServer):
         }
 
     @tool("get_historical_stock_data")
+    @track_latency("get_historical_stock_data", "alpha_vantage_tool")
     def get_historical_stock_data(self, ticker: str, interval: str = "1d") -> dict:
         """Retrieves historical stock data for a given ticker symbol.
 
