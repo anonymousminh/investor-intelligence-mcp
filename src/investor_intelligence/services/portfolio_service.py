@@ -6,6 +6,7 @@ from investor_intelligence.tools.sheets_tool import (
     read_spreadsheet_data,
     get_sheets_service,
 )
+from investor_intelligence.utils.metrics import track_latency
 
 
 class PortfolioService:
@@ -16,6 +17,7 @@ class PortfolioService:
         self.range_name = range_name
         self._portfolio: Optional[Portfolio] = None
 
+    @track_latency("load_portfolio_from_sheets", "portfolio_service")
     def load_portfolio_from_sheets(
         self, user_id: str, portfolio_name: str
     ) -> Optional[Portfolio]:
