@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, jsonify
 import os
 
 # Import services and models
@@ -7,6 +7,7 @@ from investor_intelligence.services.alert_service import AlertService
 from investor_intelligence.models.portfolio import Portfolio, StockHolding
 from investor_intelligence.models.alert import Alert
 from investor_intelligence.services.analytics_service import AnalyticsService
+from investor_intelligence.services.metrics_service import MetricsService
 from datetime import date, datetime
 from investor_intelligence.services.monitoring_service import MonitoringService
 from investor_intelligence.utils.logging import logger
@@ -16,6 +17,7 @@ app = Flask(__name__)
 # Initialize services
 alert_service = AlertService()
 analytics_service = AnalyticsService()
+metrics_service = MetricsService()
 monitoring_service = MonitoringService(alert_service, analytics_service)
 
 # IMPORTANT: Replace with your actual Google Sheet ID and range for a test user
@@ -123,6 +125,72 @@ def monitor():
         performance=analytics_service.calculate_portfolio_performance(portfolio),
         message="Monitoring complete. Alerts and behavior reflect your current configuration.",
     )
+
+
+@app.route("/metrics")
+def metrics_dashboard():
+    """Metrics dashboard page."""
+    return render_template("metrics.html")
+
+
+@app.route("/api/metrics/summary")
+def api_metrics_summary():
+    """API endpoint for metrics summary."""
+    try:
+        hours = request.args.get("hours", 24, type=int)
+        summary = metrics_service.get_overall_performance_summary(hours=hours)
+        return jsonify(summary)
+    except Exception as e:
+        logger.error(f"Error getting metrics summary: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/metrics/services")
+def api_metrics_services():
+    """API endpoint for service-specific metrics."""
+    try:
+        hours = request.args.get("hours", 24, type=int)
+        report = metrics_service.get_service_performance_report(hours=hours)
+        return jsonify(report)
+    except Exception as e:
+        logger.error(f"Error getting service metrics: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/metrics/alerts")
+def api_metrics_alerts():
+    """API endpoint for performance alerts."""
+    try:
+        hours = request.args.get("hours", 24, type=int)
+        alerts = metrics_service.get_performance_alerts(hours=hours)
+        return jsonify(alerts)
+    except Exception as e:
+        logger.error(f"Error getting performance alerts: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/metrics/recommendations")
+def api_metrics_recommendations():
+    """API endpoint for performance recommendations."""
+    try:
+        hours = request.args.get("hours", 24, type=int)
+        recommendations = metrics_service.get_performance_recommendations(hours=hours)
+        return jsonify(recommendations)
+    except Exception as e:
+        logger.error(f"Error getting performance recommendations: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/metrics/trends")
+def api_metrics_trends():
+    """API endpoint for trend analysis."""
+    try:
+        days = request.args.get("days", 7, type=int)
+        trends = metrics_service.get_trend_analysis(days=days)
+        return jsonify(trends)
+    except Exception as e:
+        logger.error(f"Error getting trend analysis: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
