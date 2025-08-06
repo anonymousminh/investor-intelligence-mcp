@@ -7,6 +7,7 @@ import time
 from alpha_vantage.fundamentaldata import FundamentalData
 import requests
 from functools import lru_cache
+from investor_intelligence.utils.metrics import track_latency
 
 load_dotenv()
 
@@ -33,6 +34,7 @@ def get_stock_info(symbol):
     return data
 
 
+@track_latency("get_current_price", "alpha_vantage_tool")
 def get_current_price(symbol):
     """Fetches the current price of a stock."""
     quote = get_quote_endpoint(symbol)
@@ -47,6 +49,7 @@ def get_current_price(symbol):
     return None
 
 
+@track_latency("get_historical_data", "alpha_vantage_tool")
 def get_historical_data(symbol, interval="1d", outputsize="compact"):
     """
     Retrieve historical price data for a given stock symbol and interval.
