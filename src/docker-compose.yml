@@ -1,0 +1,34 @@
+version: '3.11'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      # Pass environment variables securely, e.g., from a .env file or directly
+      - GOOGLE_SHEET_ID=${GOOGLE_SHEET_ID}
+      - ALPHA_VANTAGE_API_KEY=${ALPHA_VANTAGE_API_KEY}
+      - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
+      - GMAIL_USERNAME=${GMAIL_USERNAME}
+    volumes:
+      # Mount the data directory to persist SQLite databases
+      - ./data:/app/data
+    depends_on:
+      - scheduler
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python src/investor_intelligence/scheduler.py
+    environment:
+      - GOOGLE_SHEET_ID=${GOOGLE_SHEET_ID}
+      - ALPHA_VANTAGE_API_KEY=${ALPHA_VANTAGE_API_KEY}
+      - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
+      - GMAIL_USERNAME=${GMAIL_USERNAME}
+    volumes:
+      - ./data:/app/data
+    # If scheduler needs to access web service, add depends_on and network config
